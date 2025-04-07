@@ -1,0 +1,248 @@
+---
+title: 'MVVM Architecture'
+description: 'Understanding the Model-View-ViewModel pattern in FlipEdit'
+---
+
+# MVVM Architecture in FlipEdit
+
+FlipEdit implements the Model-View-ViewModel (MVVM) architectural pattern to ensure a clean separation of concerns and to facilitate testing and maintenance.
+
+## What is MVVM?
+
+MVVM is an architectural pattern that separates an application into three main components:
+
+- **Model**: Represents the data and business logic
+- **View**: Represents the UI elements
+- **ViewModel**: Acts as an intermediary between the Model and View
+
+```mermaid
+flowchart LR
+    View <--> ViewModel
+    ViewModel <--> Model
+    
+    classDef model fill:#77216f,color:white
+    classDef viewmodel fill:#e95420,color:white
+    classDef view fill:#0e8420,color:white
+    
+    class Model model
+    class ViewModel viewmodel
+    class View view
+```
+
+## Why MVVM for FlipEdit?
+
+We chose MVVM for FlipEdit because:
+
+1. **Separation of concerns** - UI logic is separated from business logic
+2. **Testability** - ViewModels can be tested independently of UI
+3. **Maintainability** - Changes to UI don't affect business logic
+4. **Reactive updates** - UI automatically reflects changes in data
+5. **Compatibility** - Works well with Flutter's widget system
+
+## MVVM Implementation in FlipEdit
+
+### Model Layer
+
+In FlipEdit, models contain the core business logic and data structures:
+
+```dart
+// Core model class
+class Project {
+  final String id;
+  final String name;
+  final List<Clip> clips;
+  final Map<String, dynamic> settings;
+  
+  // Methods for business logic
+  void addClip(Clip clip) { ... }
+  void removeClip(String clipId) { ... }
+  
+  // Serialization
+  Map<String, dynamic> toJson() { ... }
+  factory Project.fromJson(Map<String, dynamic> json) { ... }
+}
+```
+
+Models are:
+- Immutable where possible
+- Responsible for their own serialization
+- Focused on business logic
+- Independent of UI concerns
+
+### ViewModel Layer
+
+ViewModels serve as the bridge between Models and Views:
+
+```dart
+class ProjectViewModel extends ChangeNotifier {
+  Project? _currentProject;
+  
+  // Current project accessor with null safety
+  Project? get currentProject => _currentProject;
+  
+  // UI-oriented properties
+  String get projectName => _currentProject?.name ?? 'No Project';
+  bool get hasProject => _currentProject != null;
+  
+  // User actions
+  Future<void> loadProject(String projectId) async {
+    // Load from service
+    final project = await _projectService.getProject(projectId);
+    _currentProject = project;
+    notifyListeners();
+  }
+  
+  Future<void> createProject(String name) async {
+    // Create via service
+    final project = await _projectService.createProject(name);
+    _currentProject = project;
+    notifyListeners();
+  }
+}
+```
+
+ViewModels in FlipEdit:
+- Extend `ChangeNotifier` to support reactive UI updates
+- Expose data in a UI-friendly way
+- Handle user actions
+- Coordinate with services for data operations
+- Don't contain UI code
+- Are registered with `get_it` for dependency injection
+
+### View Layer
+
+Views represent the UI and observe ViewModels for changes:
+
+```dart
+class ProjectScreen extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    // Watch for changes in a specific property
+    final projectName = watchPropertyValue(
+      (ProjectViewModel vm) => vm.projectName
+    );
+    
+    final hasProject = watchPropertyValue(
+      (ProjectViewModel vm) => vm.hasProject
+    );
+    
+    return Scaffold(
+      appBar: AppBar(title: Text(projectName)),
+      body: hasProject 
+        ? ProjectEditorWidget()
+        : Center(child: Text('No project loaded')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => di<ProjectViewModel>().createProject('New Project'),
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+Views in FlipEdit:
+- Use the `WatchItMixin` to observe ViewModels
+- Call `watchPropertyValue` to react to specific property changes
+- Contain only UI logic
+- Access ViewModels through the `di` global service locator
+- Don't manipulate models directly
+
+## Reactive Updates with `watch_it`
+
+FlipEdit uses the `watch_it` package (built on `get_it`) for state management. This allows widgets to observe specific properties of ViewModels:
+
+```dart
+// Inside a widget with WatchItMixin
+final clipName = watchPropertyValue((TimelineViewModel vm) => vm.selectedClipName);
+final isPlaying = watchPropertyValue((PlayerViewModel vm) => vm.isPlaying);
+```
+
+Benefits of this approach:
+- Widgets only rebuild when observed properties change
+- Multiple properties from different ViewModels can be observed
+- No need for nested `Builder` widgets
+- Clear declarative syntax
+
+## Communication Between Components
+
+### ViewModel to View Communication
+
+ViewModels communicate with Views through property changes:
+
+1. ViewModel updates a property
+2. ViewModel calls `notifyListeners()`
+3. Any widget watching that property rebuilds
+
+### View to ViewModel Communication
+
+Views communicate with ViewModels by calling methods:
+
+```dart
+ElevatedButton(
+  onPressed: () => di<PlayerViewModel>().togglePlayPause(),
+  child: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+)
+```
+
+### ViewModel to Model Communication
+
+ViewModels manipulate models directly or through services:
+
+```dart
+Future<void> addEffect(String clipId, EffectType type) async {
+  final clip = _currentProject?.clips.firstWhere((c) => c.id == clipId);
+  if (clip != null) {
+    final newEffect = await _effectService.createEffect(type);
+    final updatedClip = clip.copyWith(
+      effects: [...clip.effects, newEffect]
+    );
+    // Update project with new clip
+    _updateClip(updatedClip);
+    notifyListeners();
+  }
+}
+```
+
+## Dependency Injection
+
+FlipEdit uses `get_it` for dependency injection:
+
+```dart
+// In app initialization
+void setupDependencies() {
+  // Register services
+  di.registerSingleton<ProjectService>(ProjectService());
+  di.registerSingleton<EffectService>(EffectService());
+  
+  // Register ViewModels
+  di.registerSingleton<ProjectViewModel>(ProjectViewModel());
+  di.registerSingleton<TimelineViewModel>(TimelineViewModel());
+  di.registerSingleton<PlayerViewModel>(PlayerViewModel());
+}
+```
+
+Accessing dependencies:
+
+```dart
+// In ViewModels
+final ProjectService _projectService = di<ProjectService>();
+
+// In Widgets
+final projectName = di<ProjectViewModel>().projectName;
+```
+
+## Benefits in FlipEdit
+
+The MVVM architecture in FlipEdit provides several advantages:
+
+1. **Clean code organization** - Each component has a clear responsibility
+2. **Testability** - ViewModels can be unit tested without UI
+3. **Flexibility** - UI can change without affecting business logic
+4. **Reactivity** - UI automatically updates when data changes
+5. **Reusability** - ViewModels can be used across different views
+
+## Next Steps
+
+- [Using ViewModels](../essentials/viewmodels.mdx) - Practical guide to working with ViewModels
+- [State Management](./state-management.mdx) - Deep dive into FlipEdit's state management
+- [Testing MVVM](../development/testing.mdx) - Testing strategies for MVVM components

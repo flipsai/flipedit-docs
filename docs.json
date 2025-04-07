@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "FlipEdit Documentation",
   "colors": {
     "primary": "#16A34A",
     "light": "#07C983",
@@ -19,6 +19,16 @@
               "introduction",
               "quickstart",
               "development"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/mvvm",
+              "architecture/decorator-pattern",
+              "architecture/effect-pipeline",
+              "architecture/extension-system"
             ]
           },
           {
@@ -59,18 +69,18 @@
       "anchors": [
         {
           "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
+          "href": "https://flipedit.com/docs",
           "icon": "book-open-cover"
         },
         {
           "anchor": "Community",
-          "href": "https://mintlify.com/community",
+          "href": "https://flipedit.com/community",
           "icon": "slack"
         },
         {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
+          "anchor": "GitHub",
+          "href": "https://github.com/flipedit/flipedit",
+          "icon": "github"
         }
       ]
     }
@@ -83,20 +93,20 @@
     "links": [
       {
         "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "href": "mailto:support@flipedit.com"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "label": "Download",
+      "href": "https://flipedit.com/download"
     }
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "twitter": "https://twitter.com/flipedit",
+      "github": "https://github.com/flipedit",
+      "discord": "https://discord.gg/flipedit"
     }
   }
 }

@@ -1,0 +1,249 @@
+---
+title: 'Decorator Pattern in FlipEdit'
+description: 'How FlipEdit uses the decorator pattern for non-destructive editing'
+---
+
+# Decorator Pattern in FlipEdit
+
+FlipEdit uses the decorator pattern as a core design principle to enable non-destructive video editing. This pattern allows effects to be layered, combined, and modified without changing the original content.
+
+## What is the Decorator Pattern?
+
+The decorator pattern is a structural design pattern that allows behavior to be added to individual objects dynamically, without affecting the behavior of other objects from the same class.
+
+In FlipEdit, it means:
+
+- Effects can be applied without modifying the original clip
+- Multiple effects can be stacked in any order
+- Effects can be added, removed, or modified at any time
+
+## Why Use the Decorator Pattern for Video Editing?
+
+Video editing traditionally follows two approaches:
+
+1. **Destructive editing** - Directly modifies the source material
+2. **Non-destructive editing** - Keeps the source intact and applies modifications at render time
+
+FlipEdit uses non-destructive editing because it:
+
+- Preserves the original footage
+- Allows unlimited experimentation
+- Enables easy undoing and redoing of changes
+- Reduces storage requirements
+- Permits complex effect chains that can be modified anytime
+
+The decorator pattern is a perfect fit for implementing this approach.
+
+## Decorator Pattern Implementation in FlipEdit
+
+### Core Interfaces
+
+FlipEdit defines two key interfaces that support the decorator pattern:
+
+```dart
+abstract class IEffect {
+  String get id;
+  String get name;
+  EffectType get type;
+  Map<String, dynamic> get parameters;
+  int get startFrame;
+  int get durationFrames;
+  
+  Map<String, dynamic> process(Map<String, dynamic> frameData);
+  Map<String, dynamic> toJson();
+}
+
+abstract class IClip {
+  String get id;
+  String get name;
+  ClipType get type;
+  String get filePath;
+  int get startFrame;
+  int get durationFrames;
+  List<IEffect> get effects;
+  Map<String, dynamic> get metadata;
+  
+  Future<Map<String, dynamic>> getProcessedFrame(int framePosition);
+  Map<String, dynamic> toJson();
+}
+```
+
+### Base Components
+
+The base components implement these interfaces:
+
+```dart
+class BaseEffect implements IEffect {
+  @override
+  final String id;
+  // Other properties...
+  
+  @override
+  Map<String, dynamic> process(Map<String, dynamic> frameData) {
+    // Base implementation
+    return frameData;
+  }
+}
+
+class BaseClip implements IClip {
+  @override
+  final String id;
+  // Other properties...
+  
+  @override
+  Future<Map<String, dynamic>> getProcessedFrame(int framePosition) async {
+    // Get raw frame and apply effects
+    Map<String, dynamic> frameData = await _loadRawFrame(framePosition);
+    for (final effect in effects) {
+      frameData = effect.process(frameData);
+    }
+    return frameData;
+  }
+}
+```
+
+### Abstract Decorator
+
+The abstract decorator wraps an effect:
+
+```dart
+abstract class EffectDecorator implements IEffect {
+  final IEffect decoratedEffect;
+  
+  EffectDecorator(this.decoratedEffect);
+  
+  // Forward all properties to the decorated effect
+  @override
+  String get id => decoratedEffect.id;
+  // Other properties...
+  
+  @override
+  Map<String, dynamic> process(Map<String, dynamic> frameData) {
+    // Apply the wrapped effect first
+    final processedData = decoratedEffect.process(frameData);
+    // Then apply this decorator's effect
+    return applyDecoration(processedData);
+  }
+  
+  // Abstract method for concrete decorators to implement
+  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData);
+}
+```
+
+### Concrete Decorators
+
+Concrete decorators implement specific effects:
+
+```dart
+class FilterEffectDecorator extends EffectDecorator {
+  final double intensity;
+  final Map<String, double> colorAdjustments;
+  
+  FilterEffectDecorator({
+    required IEffect decoratedEffect,
+    this.intensity = 1.0,
+    this.colorAdjustments = const {...},
+  }) : super(decoratedEffect);
+  
+  @override
+  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData) {
+    // Apply color adjustments
+    // Implementation details...
+    return result;
+  }
+}
+```
+
+## Using Decorators in Practice
+
+### Simple Effect Application
+
+```dart
+// Create a base effect
+final baseEffect = BaseEffect(id: '1', name: 'Base', type: EffectType.basic);
+
+// Apply a filter effect
+final filteredEffect = FilterEffectDecorator(
+  decoratedEffect: baseEffect,
+  intensity: 0.8,
+  colorAdjustments: {'brightness': 0.1, 'contrast': 0.2}
+);
+
+// Process a frame
+final processedFrame = filteredEffect.process(originalFrame);
+```
+
+### Stacking Multiple Effects
+
+```dart
+// Start with a base effect
+final baseEffect = BaseEffect(id: '1', name: 'Base', type: EffectType.basic);
+
+// Apply a filter effect
+final filteredEffect = FilterEffectDecorator(
+  decoratedEffect: baseEffect,
+  intensity: 0.8,
+);
+
+// Then apply a blur effect
+final blurredFilteredEffect = BlurEffectDecorator(
+  decoratedEffect: filteredEffect,
+  blurRadius: 5.0,
+);
+
+// Process a frame - effects are applied in order
+final processedFrame = blurredFilteredEffect.process(originalFrame);
+```
+
+### Using Factories for Cleaner Code
+
+FlipEdit provides factories to simplify creation of decorated objects:
+
+```dart
+// Create a filter effect using the factory
+final filteredEffect = EffectFactory.createFilterEffect(
+  id: '1',
+  name: 'My Filter',
+  startFrame: 0,
+  durationFrames: 30,
+  intensity: 0.8,
+  colorAdjustments: {'brightness': 0.1, 'contrast': 0.2}
+);
+```
+
+## Decorating Clips
+
+The same pattern applies to clips:
+
+```dart
+// Create a base clip
+final baseClip = ClipFactory.createBaseClip(
+  id: '1',
+  name: 'My Clip',
+  type: ClipType.video,
+  filePath: '/path/to/video.mp4',
+  startFrame: 0,
+  durationFrames: 300
+);
+
+// Create a speed-modified version
+final slowMotionClip = ClipFactory.createSpeedModifiedClip(
+  baseClip: baseClip,
+  speedFactor: 0.5 // Half speed
+);
+```
+
+## Benefits in FlipEdit
+
+The decorator pattern in FlipEdit provides several advantages:
+
+1. **Flexibility** - Effects can be combined in countless ways
+2. **Performance** - Only process what's needed at render time
+3. **Maintainability** - Simple, focused implementations for each effect
+4. **Extensibility** - New effects can be added without changing existing code
+
+## Next Steps
+
+- [Effect Pipeline](./effect-pipeline.mdx) - Learn how decorators fit into the processing pipeline
+- [Creating Custom Effects](../extensions/custom-effects.mdx) - Build your own effect decorators
+- [API Reference](../api-reference/decorators.mdx) - Complete API documentation
