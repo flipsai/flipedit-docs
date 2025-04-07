@@ -1,0 +1,649 @@
+---
+title: 'Working with ViewModels'
+description: 'A practical guide to creating and using ViewModels in FlipEdit'
+---
+
+# Working with ViewModels
+
+ViewModels play a central role in FlipEdit's architecture by bridging UI components with application state and business logic. This guide explains how to create, register, and use ViewModels effectively.
+
+## What is a ViewModel?
+
+In the MVVM pattern, a ViewModel:
+1. Exposes data in a format that's convenient for the UI
+2. Contains commands, operations, and behavior for the UI
+3. Provides state change notifications to the UI
+4. Coordinates with services to perform business operations
+
+## Creating a ViewModel
+
+To create a ViewModel in FlipEdit, extend the `ChangeNotifier` class:
+
+```dart
+import 'package:flutter/foundation.dart';
+import 'package:flipedit/di/service_locator.dart';
+import 'package:flipedit/services/effects_service.dart';
+import 'package:flipedit/models/effect.dart';
+
+class EffectsViewModel extends ChangeNotifier {
+  // Dependencies
+  final EffectsService _effectsService = di<EffectsService>();
+  
+  // Private state
+  List<Effect> _effects = [];
+  Effect? _selectedEffect;
+  bool _isLoading = false;
+  String? _errorMessage;
+  
+  // Public getters
+  List<Effect> get effects => List.unmodifiable(_effects);
+  Effect? get selectedEffect => _selectedEffect;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  
+  // Derived/computed properties
+  bool get hasEffects => _effects.isNotEmpty;
+  bool get hasSelectedEffect => _selectedEffect != null;
+  
+  // Actions/methods
+  Future<void> loadEffects(String clipId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    
+    try {
+      _effects = await _effectsService.getEffectsForClip(clipId);
+    } catch (e) {
+      _errorMessage = 'Failed to load effects: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  void selectEffect(String effectId) {
+    _selectedEffect = _effects.firstWhere(
+      (effect) => effect.id == effectId,
+      orElse: () => null,
+    );
+    notifyListeners();
+  }
+  
+  Future<void> addEffect(String type) async {
+    _isLoading = true;
+    notifyListeners();
+    
+    try {
+      final newEffect = await _effectsService.createEffect(type);
+      _effects = [..._effects, newEffect];
+      _selectedEffect = newEffect;
+    } catch (e) {
+      _errorMessage = 'Failed to add effect: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  Future<void> updateEffectParameter(
+    String effectId, 
+    String paramName, 
+    dynamic value
+  ) async {
+    final effectIndex = _effects.indexWhere((e) => e.id == effectId);
+    if (effectIndex == -1) return;
+    
+    try {
+      final updatedEffect = await _effectsService.updateEffectParameter(
+        effectId, paramName, value
+      );
+      
+      _effects = List.from(_effects)..[effectIndex] = updatedEffect;
+      
+      if (_selectedEffect?.id == effectId) {
+        _selectedEffect = updatedEffect;
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to update effect: $e';
+      notifyListeners();
+    }
+  }
+  
+  Future<void> removeEffect(String effectId) async {
+    try {
+      await _effectsService.deleteEffect(effectId);
+      
+      _effects = _effects.where((e) => e.id != effectId).toList();
+      
+      if (_selectedEffect?.id == effectId) {
+        _selectedEffect = _effects.isEmpty ? null : _effects.first;
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to remove effect: $e';
+      notifyListeners();
+    }
+  }
+  
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+}
+```
+
+### Key Components of a ViewModel
+
+1. **Dependencies**: Use the service locator (`di`) to access services
+2. **Private State**: Internal state variables with leading underscores
+3. **Public Getters**: Expose state through immutable getters 
+4. **Computed Properties**: Derived values based on internal state
+5. **Methods**: Actions triggered by the UI that modify state
+6. **Notification**: Call `notifyListeners()` when state changes
+
+## Registering ViewModels
+
+Register your ViewModels with the service locator in `lib/di/service_locator.dart`:
+
+```dart
+import 'package:flipedit/viewmodels/effects_viewmodel.dart';
+import 'package:watch_it/watch_it.dart';
+
+void setupServiceLocator() {
+  // Register other dependencies...
+  
+  // ViewModels
+  di.registerLazySingleton<EffectsViewModel>(() => EffectsViewModel());
+}
+```
+
+Use `registerLazySingleton` for ViewModels that:
+- Should be instantiated only when first accessed
+- Should persist throughout the app lifecycle
+- Should maintain state between screens
+
+## Using ViewModels in UI Components
+
+### Consuming a ViewModel with WatchItMixin
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flipedit/di/service_locator.dart';
+import 'package:flipedit/viewmodels/effects_viewmodel.dart';
+import 'package:watch_it/watch_it.dart';
+
+class EffectsPanel extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    // Observe multiple properties
+    final effects = watchPropertyValue((EffectsViewModel vm) => vm.effects);
+    final selectedEffect = watchPropertyValue((EffectsViewModel vm) => vm.selectedEffect);
+    final isLoading = watchPropertyValue((EffectsViewModel vm) => vm.isLoading);
+    final errorMessage = watchPropertyValue((EffectsViewModel vm) => vm.errorMessage);
+    
+    // Access computed property
+    final hasEffects = watchPropertyValue((EffectsViewModel vm) => vm.hasEffects);
+    
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (errorMessage != null) {
+      return ErrorWidget(
+        message: errorMessage,
+        onRetry: () => di<EffectsViewModel>().loadEffects('currentClipId'),
+        onDismiss: () => di<EffectsViewModel>().clearError(),
+      );
+    }
+    
+    if (!hasEffects) {
+      return const EmptyEffectsView();
+    }
+    
+    return Column(
+      children: [
+        EffectsListView(
+          effects: effects,
+          selectedEffect: selectedEffect,
+          onEffectSelected: (effectId) {
+            di<EffectsViewModel>().selectEffect(effectId);
+          },
+        ),
+        
+        AddEffectButton(
+          onPressed: () => _showAddEffectDialog(context),
+        ),
+        
+        if (selectedEffect != null)
+          EffectPropertiesEditor(
+            effect: selectedEffect,
+            onParameterChanged: (paramName, value) {
+              di<EffectsViewModel>().updateEffectParameter(
+                selectedEffect.id, paramName, value
+              );
+            },
+          ),
+      ],
+    );
+  }
+  
+  void _showAddEffectDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AddEffectDialog(
+        onEffectTypeSelected: (type) {
+          di<EffectsViewModel>().addEffect(type);
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
+}
+```
+
+### WatchItMixin Best Practices
+
+1. **Watch specific properties**: Use `watchPropertyValue` for targeted rebuilds
+2. **Use multiple watch calls**: Observe only the properties needed by a widget
+3. **Keep watches at the top**: Place all `watchPropertyValue` calls at the beginning of the `build` method
+4. **Constant order**: Ensure the order of watch calls remains the same between builds
+
+## ViewModel Interactions
+
+### ViewModel-to-ViewModel Communication
+
+When a ViewModel needs to interact with another ViewModel:
+
+```dart
+class TimelineViewModel extends ChangeNotifier {
+  final EffectsViewModel _effectsViewModel = di<EffectsViewModel>();
+  
+  void selectClip(String clipId) {
+    _selectedClipId = clipId;
+    
+    // Load effects for the selected clip
+    _effectsViewModel.loadEffects(clipId);
+    
+    notifyListeners();
+  }
+}
+```
+
+### ViewModel Initialization
+
+Initialize ViewModels where appropriate:
+
+```dart
+class EditorScreen extends StatefulWidget {
+  @override
+  _EditorScreenState createState() => _EditorScreenState();
+}
+
+class _EditorScreenState extends State<EditorScreen> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // Initialize ViewModels
+    di<ProjectViewModel>().loadCurrentProject();
+    di<TimelineViewModel>().initialize();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    // ...
+  }
+}
+```
+
+## Advanced ViewModel Patterns
+
+### Managing Collections
+
+When managing collections, always create new lists to ensure proper notification:
+
+```dart
+void addClip(Clip clip) {
+  // Create a new list instead of modifying the existing one
+  _clips = [..._clips, clip];
+  notifyListeners();
+}
+
+void removeClip(String clipId) {
+  // Create a new filtered list
+  _clips = _clips.where((clip) => clip.id != clipId).toList();
+  notifyListeners();
+}
+
+void updateClip(Clip updatedClip) {
+  final index = _clips.indexWhere((clip) => clip.id == updatedClip.id);
+  if (index >= 0) {
+    // Create a new list with the updated item
+    _clips = List.from(_clips)..[index] = updatedClip;
+    notifyListeners();
+  }
+}
+
+void reorderClips(int oldIndex, int newIndex) {
+  // Create a new list with reordered items
+  final clip = _clips[oldIndex];
+  final newClips = List.from(_clips)..removeAt(oldIndex);
+  
+  // Adjust for removal
+  if (newIndex > oldIndex) {
+    newIndex -= 1;
+  }
+  
+  newClips.insert(newIndex, clip);
+  _clips = newClips;
+  notifyListeners();
+}
+```
+
+### Loading States
+
+Use explicit loading states to provide feedback:
+
+```dart
+enum LoadingState { initial, loading, loaded, error }
+
+class ProjectViewModel extends ChangeNotifier {
+  LoadingState _loadingState = LoadingState.initial;
+  String? _errorMessage;
+  
+  LoadingState get loadingState => _loadingState;
+  String? get errorMessage => _errorMessage;
+  
+  Future<void> loadProject(String id) async {
+    _loadingState = LoadingState.loading;
+    _errorMessage = null;
+    notifyListeners();
+    
+    try {
+      _project = await _projectService.getProject(id);
+      _loadingState = LoadingState.loaded;
+    } catch (e) {
+      _loadingState = LoadingState.error;
+      _errorMessage = 'Failed to load project: $e';
+    }
+    
+    notifyListeners();
+  }
+}
+```
+
+### Coordinating Multiple Operations
+
+For complex operations that involve multiple steps:
+
+```dart
+Future<void> exportProject(ExportSettings settings) async {
+  final projectViewModel = di<ProjectViewModel>();
+  final effectsViewModel = di<EffectsViewModel>();
+  
+  _exportState = ExportState.preparing;
+  notifyListeners();
+  
+  try {
+    // 1. Validate project
+    if (!projectViewModel.validate()) {
+      throw Exception('Project validation failed');
+    }
+    
+    // 2. Prepare effects
+    _exportState = ExportState.processingEffects;
+    notifyListeners();
+    
+    await effectsViewModel.prepareForExport();
+    
+    // 3. Generate output
+    _exportState = ExportState.generating;
+    _progress = 0.0;
+    notifyListeners();
+    
+    final exporter = _exporterFactory.createExporter(settings.format);
+    
+    exporter.onProgressChanged = (progress) {
+      _progress = progress;
+      notifyListeners();
+    };
+    
+    final outputPath = await exporter.export(
+      projectViewModel.currentProject!,
+      settings
+    );
+    
+    // 4. Complete
+    _exportState = ExportState.completed;
+    _outputPath = outputPath;
+    notifyListeners();
+    
+  } catch (e) {
+    _exportState = ExportState.error;
+    _errorMessage = 'Export failed: $e';
+    notifyListeners();
+  }
+}
+```
+
+## Testing ViewModels
+
+ViewModels are easy to test because they're independent of the UI:
+
+```dart
+import 'package:test/test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:flipedit/services/effects_service.dart';
+import 'package:flipedit/viewmodels/effects_viewmodel.dart';
+
+// Mock dependencies
+class MockEffectsService extends Mock implements EffectsService {}
+
+void main() {
+  late EffectsViewModel viewModel;
+  late MockEffectsService mockEffectsService;
+  
+  setUp(() {
+    mockEffectsService = MockEffectsService();
+    // Inject the mock dependency
+    viewModel = EffectsViewModel()..effectsService = mockEffectsService;
+  });
+  
+  test('loadEffects should update effects list', () async {
+    // Arrange
+    final testEffects = [
+      Effect(id: '1', name: 'Blur', parameters: {}),
+      Effect(id: '2', name: 'Color', parameters: {}),
+    ];
+    
+    when(mockEffectsService.getEffectsForClip('clip1'))
+        .thenAnswer((_) async => testEffects);
+    
+    // Act
+    await viewModel.loadEffects('clip1');
+    
+    // Assert
+    expect(viewModel.effects, equals(testEffects));
+    expect(viewModel.isLoading, isFalse);
+    expect(viewModel.errorMessage, isNull);
+  });
+  
+  test('addEffect should add effect to list', () async {
+    // Arrange
+    final newEffect = Effect(id: '3', name: 'Sharpen', parameters: {});
+    when(mockEffectsService.createEffect('Sharpen'))
+        .thenAnswer((_) async => newEffect);
+    
+    // Act
+    await viewModel.addEffect('Sharpen');
+    
+    // Assert
+    expect(viewModel.effects, contains(newEffect));
+    expect(viewModel.selectedEffect, equals(newEffect));
+  });
+  
+  // More tests...
+}
+```
+
+## Common Pitfalls and Solutions
+
+### Excessive Rebuilds
+
+**Problem**: Widgets rebuild too frequently because they observe entire ViewModels or frequently changing properties.
+
+**Solution**: Use `watchPropertyValue` to observe only the specific properties needed by each widget.
+
+### Memory Leaks
+
+**Problem**: ViewModels subscribe to external sources but don't unsubscribe.
+
+**Solution**: Use `@override void dispose()` to clean up resources:
+
+```dart
+class MediaViewModel extends ChangeNotifier {
+  StreamSubscription? _mediaSubscription;
+  
+  void initialize() {
+    _mediaSubscription = _mediaService.mediaStream.listen((media) {
+      // Handle media updates
+      notifyListeners();
+    });
+  }
+  
+  @override
+  void dispose() {
+    _mediaSubscription?.cancel();
+    super.dispose();
+  }
+}
+```
+
+### Circular Dependencies
+
+**Problem**: ViewModels depend on each other in a circular manner.
+
+**Solution**: Use event-based communication or a mediator:
+
+```dart
+// Shared events class
+class AppEvents {
+  final clipSelected = ValueNotifier<String?>(null);
+  final effectAdded = ValueNotifier<Effect?>(null);
+}
+
+// Register as singleton
+di.registerLazySingleton<AppEvents>(() => AppEvents());
+
+// Use in ViewModels
+class TimelineViewModel extends ChangeNotifier {
+  final AppEvents _events = di<AppEvents>();
+  
+  void selectClip(String clipId) {
+    _selectedClipId = clipId;
+    _events.clipSelected.value = clipId;
+    notifyListeners();
+  }
+}
+
+class EffectsViewModel extends ChangeNotifier {
+  final AppEvents _events = di<AppEvents>();
+  
+  EffectsViewModel() {
+    _events.clipSelected.addListener(_onClipSelected);
+  }
+  
+  void _onClipSelected() {
+    final clipId = _events.clipSelected.value;
+    if (clipId != null) {
+      loadEffects(clipId);
+    }
+  }
+  
+  @override
+  void dispose() {
+    _events.clipSelected.removeListener(_onClipSelected);
+    super.dispose();
+  }
+}
+```
+
+## Comparison with VS Code's Architecture
+
+While FlipEdit uses MVVM with `watch_it` for state management, VS Code uses a slightly different approach with services and event emitters in TypeScript. However, the core principles remain similar:
+
+### VS Code's Approach
+```typescript
+// VS Code service pattern example
+export interface ITimelineService {
+  readonly _serviceBrand: undefined;
+  readonly onDidChangeClips: Event<void>;
+  
+  getClips(): Clip[];
+  addClip(clip: Clip): Promise<void>;
+  removeClip(id: string): Promise<void>;
+}
+
+// Implementation
+export class TimelineService implements ITimelineService {
+  readonly _serviceBrand: undefined;
+  
+  private readonly _onDidChangeClips = new Emitter<void>();
+  readonly onDidChangeClips = this._onDidChangeClips.event;
+  
+  private _clips: Clip[] = [];
+  
+  constructor(
+    @IProjectService private readonly projectService: IProjectService
+  ) {
+    // Service dependencies and initialization
+  }
+  
+  getClips(): Clip[] {
+    return [...this._clips];
+  }
+  
+  async addClip(clip: Clip): Promise<void> {
+    this._clips.push(clip);
+    this._onDidChangeClips.fire();
+  }
+  
+  async removeClip(id: string): Promise<void> {
+    this._clips = this._clips.filter(clip => clip.id !== id);
+    this._onDidChangeClips.fire();
+  }
+}
+```
+
+### FlipEdit's Approach
+```dart
+// FlipEdit ViewModel pattern
+class TimelineViewModel extends ChangeNotifier {
+  final ProjectService _projectService = di<ProjectService>();
+  
+  List<Clip> _clips = [];
+  List<Clip> get clips => List.unmodifiable(_clips);
+  
+  Future<void> addClip(Clip clip) async {
+    _clips = [..._clips, clip];
+    notifyListeners();
+  }
+  
+  Future<void> removeClip(String id) async {
+    _clips = _clips.where((clip) => clip.id != id).toList();
+    notifyListeners();
+  }
+}
+```
+
+Both approaches have advantages, but FlipEdit's MVVM pattern with `watch_it` offers a cleaner integration with Flutter's widget system and provides more fine-grained reactivity for UI updates.
+
+## Next Steps
+
+- [State Management](../architecture/state-management.mdx)
+- [Creating UI Components](../development/ui-components.mdx)
+- [Working with Services](../development/services.mdx)
+- [Extension Development](../extensions/creating.mdx)

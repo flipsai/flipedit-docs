@@ -1,0 +1,625 @@
+---
+title: 'get_it and watch_it'
+description: 'Deep dive into dependency injection and reactive state management in FlipEdit'
+---
+
+# Dependency Injection and Reactive State with get_it and watch_it
+
+FlipEdit uses a powerful combination of two libraries for dependency injection and reactive state management: `get_it` and `watch_it`. This guide explains how these libraries work together to create a clean, maintainable architecture.
+
+## Understanding get_it
+
+`get_it` is a simple service locator for Dart and Flutter projects. It allows you to register and retrieve objects (services, view models, etc.) from anywhere in your application without needing to pass them down through constructors or widget trees.
+
+### How get_it Works
+
+FlipEdit uses `get_it` to register all services and view models at app startup:
+
+```dart
+import 'package:get_it/get_it.dart';
+import 'package:watch_it/watch_it.dart'; // Provides a global di instance
+
+// Services and ViewModels
+import 'package:flipedit/services/comfyui_service.dart';
+import 'package:flipedit/viewmodels/app_viewmodel.dart';
+// ...more imports
+
+void setupServiceLocator() {
+  // Register services
+  di.registerLazySingleton<ComfyUIService>(() => ComfyUIService());
+  di.registerLazySingleton<UvManager>(() => UvManager());
+  
+  // Register ViewModels
+  di.registerLazySingleton<AppViewModel>(() => AppViewModel());
+  di.registerLazySingleton<ProjectViewModel>(() => ProjectViewModel());
+  di.registerLazySingleton<EditorViewModel>(() => EditorViewModel());
+  di.registerLazySingleton<TimelineViewModel>(() => TimelineViewModel());
+  di.registerLazySingleton<PanelGridViewModel>(() => PanelGridViewModel());
+}
+```
+
+The `di` object is a global instance of `GetIt` provided by the `watch_it` package. The name "di" stands for "dependency injection" and is a convention used in the app.
+
+### Registration Types in get_it
+
+FlipEdit uses several types of registrations:
+
+1. **Lazy Singletons**: `di.registerLazySingleton<T>(() => T())`
+   - Object is created only when first accessed
+   - Same instance is returned every time
+   - Used for services and ViewModels that should persist throughout app lifecycle
+
+2. **Factories**: `di.registerFactory<T>(() => T())`
+   - New instance created each time it's accessed
+   - Used for objects that need fresh instances
+
+3. **Singletons**: `di.registerSingleton<T>(T())`
+   - Object is created immediately at registration
+   - Same instance is returned every time
+   - Used for critical services that should initialize at startup
+
+### Accessing Registered Objects
+
+Once registered, objects can be accessed from anywhere using:
+
+```dart
+final appViewModel = di<AppViewModel>();
+final comfyUIService = di<ComfyUIService>();
+```
+
+This allows for clean dependency retrieval without complex provider patterns or constructor passing.
+
+## Understanding watch_it
+
+`watch_it` enhances `get_it` by adding reactive capabilities. It enables widgets to "watch" specific properties of objects registered with `get_it` and automatically rebuild when those properties change.
+
+### How watch_it Works in FlipEdit
+
+`watch_it` relies on Flutter's `ChangeNotifier` mechanism to detect changes. In FlipEdit, all ViewModels extend `ChangeNotifier`:
+
+```dart
+class AppViewModel extends ChangeNotifier {
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+  
+  void updateInitialization(bool value) {
+    _isInitialized = value;
+    notifyListeners(); // Notifies all observers
+  }
+}
+```
+
+Widgets can then observe specific properties using the `WatchItMixin`:
+
+```dart
+class ProjectTitle extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    // Only rebuilds when currentProject?.name changes
+    final projectName = watchPropertyValue(
+      (ProjectViewModel vm) => vm.currentProject?.name
+    ) ?? 'Untitled Project';
+    
+    return Text(projectName);
+  }
+}
+```
+
+### Key watch_it Methods
+
+FlipEdit primarily uses the following `watch_it` methods:
+
+1. **watchPropertyValue**: Observes a specific property of an object
+
+   ```dart
+   final isPlaying = watchPropertyValue(
+     (PlayerViewModel vm) => vm.isPlaying
+   );
+   ```
+
+2. **watchIt**: Observes an entire object (less common)
+
+   ```dart
+   final viewModel = watchIt<TimelineViewModel>();
+   // Will rebuild when ANY property changes
+   ```
+
+3. **registerHandler**: Registers a callback without rebuilding
+
+   ```dart
+   registerHandler(
+     select: (AppViewModel vm) => vm.errorMessage,
+     handler: (context, errorMessage, cancel) {
+       if (errorMessage != null) {
+         showErrorDialog(context, errorMessage);
+       }
+     }
+   );
+   ```
+
+### How watch_it Compares to VS Code's Approach
+
+Visual Studio Code uses a different approach for reactivity with TypeScript:
+
+```typescript
+// VS Code approach
+class TimelineView extends Disposable {
+  private readonly timelineService: ITimelineService;
+  
+  constructor(
+    @ITimelineService timelineService: ITimelineService
+  ) {
+    super();
+    this.timelineService = timelineService;
+    
+    // Register for change notifications
+    this._register(
+      this.timelineService.onDidChangeClips(() => {
+        this.render();
+      })
+    );
+  }
+  
+  render(): void {
+    const clips = this.timelineService.getClips();
+    // Render UI with clips...
+  }
+}
+```
+
+While VS Code uses explicit event subscriptions, FlipEdit's `watch_it` approach is more declarative and integrated with Flutter's widget system.
+
+## Benefits of get_it and watch_it in FlipEdit
+
+### 1. Decoupled Architecture
+
+Services and ViewModels are decoupled from the UI, making them:
+- Easier to test
+- More maintainable
+- Reusable across different parts of the app
+
+### 2. Granular Reactivity
+
+Widgets only rebuild when specific properties change, not when any state changes, leading to:
+- Better performance
+- Less wasted rebuilds
+- Cleaner UI code
+
+```dart
+Widget build(BuildContext context) {
+  // These widgets ONLY rebuild when their specific properties change
+  final projectName = watchPropertyValue((ProjectViewModel vm) => vm.currentProject?.name);
+  final isPlaying = watchPropertyValue((PlayerViewModel vm) => vm.isPlaying);
+  final selectedEffect = watchPropertyValue((EffectsViewModel vm) => vm.selectedEffect);
+  
+  // UI that uses these values...
+}
+```
+
+### 3. No Need for Context for State Access
+
+Unlike some state management solutions, `get_it` allows accessing state without a `BuildContext`:
+
+```dart
+// Can be called from anywhere, not just in widgets
+void saveProject() {
+  di<ProjectViewModel>().saveProject();
+}
+```
+
+### 4. Simplified Testing
+
+With dependency injection, testing becomes much easier:
+
+```dart
+test('ProjectViewModel creates new project', () {
+  // Setup
+  final mockProjectService = MockProjectService();
+  GetIt.instance.registerSingleton<ProjectService>(mockProjectService);
+  
+  final viewModel = ProjectViewModel();
+  
+  // Test
+  viewModel.createProject('Test');
+  
+  // Verify
+  verify(mockProjectService.createProject('Test')).called(1);
+});
+```
+
+## Common Patterns in FlipEdit
+
+### 1. Service Access in ViewModels
+
+ViewModels typically access services via the service locator:
+
+```dart
+class ProjectViewModel extends ChangeNotifier {
+  // Get service via service locator
+  final ProjectService _projectService = di<ProjectService>();
+  
+  Future<void> saveProject() async {
+    await _projectService.saveProject(_currentProject!);
+    notifyListeners();
+  }
+}
+```
+
+### 2. WatchItMixin in Widgets
+
+Widgets use `WatchItMixin` to observe ViewModel properties:
+
+```dart
+class TimelineView extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    final clips = watchPropertyValue((TimelineViewModel vm) => vm.clips);
+    final isLoading = watchPropertyValue((TimelineViewModel vm) => vm.isLoading);
+    
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    return ListView.builder(
+      itemCount: clips.length,
+      itemBuilder: (context, index) => ClipWidget(clip: clips[index]),
+    );
+  }
+}
+```
+
+### 3. Direct ViewModel Method Calls
+
+Widgets call ViewModel methods directly using the service locator:
+
+```dart
+ElevatedButton(
+  onPressed: () => di<ProjectViewModel>().saveProject(),
+  child: Text('Save Project'),
+)
+```
+
+### 4. Coordinating Multiple ViewModels
+
+Sometimes ViewModels need to coordinate with each other:
+
+```dart
+class EditorViewModel extends ChangeNotifier {
+  // Get other ViewModels via service locator
+  final TimelineViewModel _timelineViewModel = di<TimelineViewModel>();
+  final EffectsViewModel _effectsViewModel = di<EffectsViewModel>();
+  
+  void selectClip(String clipId) {
+    _timelineViewModel.selectClip(clipId);
+    _effectsViewModel.loadEffectsForClip(clipId);
+  }
+}
+```
+
+## Best Practices for get_it and watch_it
+
+### 1. Register in the Right Order
+
+When objects depend on each other, register dependencies first:
+
+```dart
+void setupServiceLocator() {
+  // Register services first
+  di.registerLazySingleton<ApiService>(() => ApiService());
+  di.registerLazySingleton<StorageService>(() => StorageService());
+  
+  // Then register ViewModels that depend on services
+  di.registerLazySingleton<AppViewModel>(() => AppViewModel());
+}
+```
+
+### 2. Use Fine-Grained Property Watching
+
+Watch specific properties rather than entire objects:
+
+```dart
+// Good: Fine-grained watching
+final isPlaying = watchPropertyValue((PlayerViewModel vm) => vm.isPlaying);
+
+// Avoid: Watching the entire object
+final playerVm = watchIt<PlayerViewModel>(); // Rebuilds on ANY change
+```
+
+### 3. Keep ViewModels Focused
+
+Each ViewModel should have a single responsibility:
+
+```dart
+// Good: Focused responsibility
+class TimelineViewModel extends ChangeNotifier {
+  // Only timeline-related state and methods
+}
+
+class EffectsViewModel extends ChangeNotifier {
+  // Only effects-related state and methods
+}
+
+// Avoid: Too many responsibilities
+class EditorViewModel extends ChangeNotifier {
+  // Timeline, effects, project, and export methods all mixed together
+}
+```
+
+### 4. Clean Up Subscriptions
+
+If a ViewModel subscribes to streams or events, clean them up in `dispose()`:
+
+```dart
+class MediaViewModel extends ChangeNotifier {
+  StreamSubscription? _streamSubscription;
+  
+  void initialize() {
+    _streamSubscription = _mediaService.events.listen((event) {
+      // Handle event
+      notifyListeners();
+    });
+  }
+  
+  @override
+  void dispose() {
+    _streamSubscription?.cancel();
+    super.dispose();
+  }
+}
+```
+
+### 5. Avoid Circular Dependencies
+
+Be careful not to create circular dependencies between services or ViewModels:
+
+```dart
+// Problematic circular dependency
+class ServiceA {
+  final ServiceB _serviceB = di<ServiceB>();
+}
+
+class ServiceB {
+  final ServiceA _serviceA = di<ServiceA>();
+}
+```
+
+Instead, use events or a mediator pattern to decouple the interaction:
+
+```dart
+// Using a mediator
+class AppEvents {
+  final clipSelected = ValueNotifier<String?>(null);
+}
+
+di.registerLazySingleton<AppEvents>(() => AppEvents());
+
+class ServiceA {
+  final AppEvents _events = di<AppEvents>();
+  
+  void doSomething() {
+    // Publish an event instead of calling ServiceB directly
+    _events.clipSelected.value = 'clip1';
+  }
+}
+
+class ServiceB {
+  final AppEvents _events = di<AppEvents>();
+  
+  ServiceB() {
+    // Subscribe to events
+    _events.clipSelected.addListener(_onClipSelected);
+  }
+  
+  void _onClipSelected() {
+    final clipId = _events.clipSelected.value;
+    if (clipId != null) {
+      // React to the event
+    }
+  }
+}
+```
+
+## Comparison with Other State Management Solutions
+
+### vs. Provider
+
+Provider is another popular state management solution for Flutter:
+
+```dart
+// Provider approach
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ProjectViewModel()),
+        ChangeNotifierProvider(create: (_) => TimelineViewModel()),
+      ],
+      child: HomeScreen(),
+    );
+  }
+}
+
+// Accessing in widgets
+Consumer<ProjectViewModel>(
+  builder: (context, viewModel, child) {
+    return Text(viewModel.projectName);
+  },
+);
+```
+
+**Advantages of watch_it over Provider:**
+- More fine-grained control over what causes rebuilds
+- No need for Provider context tree
+- Easier to access outside of widget tree
+- No nesting of Consumers required for multiple providers
+
+### vs. Bloc/Cubit
+
+Bloc pattern is more structured but requires more boilerplate:
+
+```dart
+// Bloc approach
+class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
+  ProjectBloc() : super(ProjectInitial()) {
+    on<LoadProject>(_onLoadProject);
+    on<SaveProject>(_onSaveProject);
+  }
+
+  void _onLoadProject(LoadProject event, Emitter<ProjectState> emit) async {
+    emit(ProjectLoading());
+    try {
+      final project = await _repository.loadProject(event.id);
+      emit(ProjectLoaded(project));
+    } catch (e) {
+      emit(ProjectError(e.toString()));
+    }
+  }
+  
+  // More event handlers...
+}
+
+// In UI
+BlocBuilder<ProjectBloc, ProjectState>(
+  builder: (context, state) {
+    if (state is ProjectLoading) {
+      return CircularProgressIndicator();
+    } else if (state is ProjectLoaded) {
+      return Text(state.project.name);
+    } else if (state is ProjectError) {
+      return Text('Error: ${state.message}');
+    }
+    return Container();
+  },
+);
+```
+
+**Advantages of watch_it over Bloc:**
+- Less boilerplate code
+- Simpler to implement for many use cases
+- Easier to understand for developers new to the codebase
+- More closely aligned with Flutter's own patterns
+
+## VS Code Comparison
+
+While FlipEdit uses `get_it` and `watch_it` for its state management, Visual Studio Code uses a more service-oriented architecture with explicit event subscriptions. Here's how they compare:
+
+### VS Code Services
+
+VS Code organizes functionality into services registered through a dependency injection container:
+
+```typescript
+// VS Code service registration
+const instantiationService = new InstantiationService(services);
+instantiationService.createInstance(EditorService);
+instantiationService.createInstance(WorkspaceService);
+```
+
+Similarly, FlipEdit uses `get_it` for service registration:
+
+```dart
+// FlipEdit service registration
+di.registerLazySingleton<EditorService>(() => EditorService());
+di.registerLazySingleton<WorkspaceService>(() => WorkspaceService());
+```
+
+### VS Code Event Model
+
+VS Code uses an event-based system for reactivity:
+
+```typescript
+// VS Code event model
+class EditorService {
+  private readonly _onDidChangeActiveEditor = new Emitter<IEditor>();
+  readonly onDidChangeActiveEditor = this._onDidChangeActiveEditor.event;
+
+  setActiveEditor(editor: IEditor): void {
+    this._activeEditor = editor;
+    this._onDidChangeActiveEditor.fire(editor);
+  }
+}
+
+// Subscribing to events
+editorService.onDidChangeActiveEditor(editor => {
+  console.log('Active editor changed:', editor.getId());
+  this.updateView();
+});
+```
+
+FlipEdit achieves similar functionality with `ChangeNotifier` and `watch_it`:
+
+```dart
+// FlipEdit with ChangeNotifier
+class EditorViewModel extends ChangeNotifier {
+  Editor? _activeEditor;
+  Editor? get activeEditor => _activeEditor;
+
+  void setActiveEditor(Editor editor) {
+    _activeEditor = editor;
+    notifyListeners();
+  }
+}
+
+// Observing changes
+final activeEditor = watchPropertyValue((EditorViewModel vm) => vm.activeEditor);
+```
+
+### VS Code UI Updates
+
+VS Code manually handles UI updates in response to events:
+
+```typescript
+// VS Code manual UI updates
+class EditorStatusComponent extends Disposable {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService
+  ) {
+    super();
+    
+    this._register(
+      this.editorService.onDidChangeActiveEditor(() => {
+        this.render();
+      })
+    );
+    
+    this.render();
+  }
+  
+  private render(): void {
+    const editor = this.editorService.getActiveEditor();
+    if (editor) {
+      this.statusElement.textContent = `Line: ${editor.getPosition().lineNumber}`;
+    } else {
+      this.statusElement.textContent = '';
+    }
+  }
+}
+```
+
+FlipEdit's `watch_it` approach is more declarative:
+
+```dart
+// FlipEdit declarative UI updates
+class EditorStatusWidget extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    final activeEditor = watchPropertyValue((EditorViewModel vm) => vm.activeEditor);
+    final lineNumber = activeEditor?.currentPosition?.lineNumber;
+    
+    return Text(lineNumber != null ? 'Line: $lineNumber' : '');
+  }
+}
+```
+
+## Conclusion
+
+The combination of `get_it` and `watch_it` provides FlipEdit with a powerful, flexible, and efficient state management solution that aligns well with Flutter's widget system. While Visual Studio Code's approach is more service-oriented with explicit event subscriptions, FlipEdit's approach offers similar capabilities with less boilerplate and tighter integration with Flutter's reactive paradigm.
+
+By following the patterns and best practices outlined in this guide, you can leverage these libraries to build maintainable, testable, and performant features for FlipEdit, all while maintaining a clean separation of concerns.
+
+## Next Steps
+
+- [Working with ViewModels](./viewmodels.mdx)
+- [Creating Services](./services.mdx)
+- [Testing FlipEdit](./testing.mdx)
+- [Contributing to FlipEdit](../contributing/getting-started.mdx)

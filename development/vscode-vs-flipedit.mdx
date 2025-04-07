@@ -1,0 +1,943 @@
+---
+title: 'VS Code vs FlipEdit Architecture'
+description: 'Comparing the architectural approaches of Visual Studio Code and FlipEdit'
+---
+
+# Comparing VS Code and FlipEdit Architectures
+
+Visual Studio Code and FlipEdit are both extensible applications with rich user interfaces, but they use different technologies and architectural approaches. This guide compares their architectures to help developers understand how to implement features in FlipEdit by drawing parallels with VS Code's well-established patterns.
+
+## Technology Stack Comparison
+
+| Aspect | Visual Studio Code | FlipEdit |
+|--------|-------------------|----------|
+| Language | TypeScript | Dart |
+| UI Framework | Electron/HTML/CSS | Flutter |
+| Platform | Cross-platform (Electron) | Cross-platform (Flutter) |
+| Extension Model | JavaScript/TypeScript extensions | Flutter-based extensions with ComfyUI integration |
+| State Management | Custom service-based system | MVVM with get_it/watch_it |
+| UI Update Pattern | Event-driven + manual DOM updates | Reactive widgets with property watching |
+
+## Architectural Patterns
+
+### Component Organization
+
+#### VS Code
+
+VS Code organizes its code into **services**, **contributions**, and **UI components**:
+
+```
+src/
+├── vs/
+│   ├── base/          # Core utilities, events, service registry
+│   ├── code/          # Application shell and bootstrap
+│   ├── editor/        # Editor implementation
+│   ├── platform/      # Platform services (files, dialogs, etc.)
+│   ├── workbench/     # Main UI components and services
+│   └── languages/     # Language-specific features
+```
+
+#### FlipEdit
+
+FlipEdit uses an MVVM-based organization with models, viewmodels, views, and services:
+
+```
+lib/
+├── models/           # Domain models
+├── viewmodels/       # UI state and business logic
+├── views/            # UI components
+│   ├── screens/      # Full application screens
+│   └── widgets/      # Reusable UI components
+├── services/         # Core services
+├── comfyui/          # ComfyUI integration
+├── extensions/       # Extension system
+└── di/               # Dependency injection setup
+```
+
+### Service Architecture
+
+#### VS Code
+
+VS Code uses an interface-based service architecture with dependency injection:
+
+```typescript
+// Service interface
+export interface IEditorService {
+  readonly _serviceBrand: undefined;
+  
+  // Events
+  readonly onDidActiveEditorChange: Event<void>;
+  
+  // Methods
+  getActiveEditor(): IEditor | null;
+  openEditor(input: IEditorInput): Promise<IEditor>;
+}
+
+// Service implementation
+export class EditorService implements IEditorService {
+  readonly _serviceBrand: undefined;
+  
+  private readonly _onDidActiveEditorChange = new Emitter<void>();
+  readonly onDidActiveEditorChange = this._onDidActiveEditorChange.event;
+  
+  private _activeEditor: IEditor | null = null;
+  
+  constructor(
+    @ILifecycleService private readonly lifecycleService: ILifecycleService,
+    @IWorkspaceService private readonly workspaceService: IWorkspaceService
+  ) {
+    // Initialize service
+  }
+  
+  getActiveEditor(): IEditor | null {
+    return this._activeEditor;
+  }
+  
+  async openEditor(input: IEditorInput): Promise<IEditor> {
+    // Implementation
+    this._activeEditor = editor;
+    this._onDidActiveEditorChange.fire();
+    return editor;
+  }
+}
+```
+
+#### FlipEdit
+
+FlipEdit combines services for domain logic with ViewModels for UI state:
+
+```dart
+// Service for domain logic
+class EditorService {
+  Future<void> saveFile(String path, String content) async {
+    // Implementation
+  }
+  
+  Future<String> loadFile(String path) async {
+    // Implementation
+  }
+}
+
+// ViewModel for UI state
+class EditorViewModel extends ChangeNotifier {
+  final EditorService _editorService = di<EditorService>();
+  
+  Editor? _activeEditor;
+  bool _isLoading = false;
+  String? _errorMessage;
+  
+  Editor? get activeEditor => _activeEditor;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  
+  Future<void> openEditor(String path) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    
+    try {
+      final content = await _editorService.loadFile(path);
+      _activeEditor = Editor(path: path, content: content);
+    } catch (e) {
+      _errorMessage = 'Failed to open file: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+}
+```
+
+## Event and Reactivity Models
+
+### VS Code's Event Model
+
+VS Code uses a custom event system for communicating between components:
+
+```typescript
+// Define an event emitter
+private readonly _onDidChangeClips = new Emitter<void>();
+readonly onDidChangeClips = this._onDidChangeClips.event;
+
+// Fire an event
+this._onDidChangeClips.fire();
+
+// Subscribe to an event
+this._register(this.timelineService.onDidChangeClips(() => {
+  this.render();
+}));
+```
+
+This explicit event system requires manual subscription management and UI updating.
+
+### FlipEdit's Reactivity Model
+
+FlipEdit uses Flutter's `ChangeNotifier` with `watch_it` for more declarative reactivity:
+
+```dart
+// ViewModel with change notification
+class TimelineViewModel extends ChangeNotifier {
+  List<Clip> _clips = [];
+  List<Clip> get clips => List.unmodifiable(_clips);
+  
+  void addClip(Clip clip) {
+    _clips = [..._clips, clip];
+    notifyListeners();
+  }
+}
+
+// Widget that reacts to changes
+class TimelineView extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    final clips = watchPropertyValue((TimelineViewModel vm) => vm.clips);
+    
+    return ListView.builder(
+      itemCount: clips.length,
+      itemBuilder: (context, index) => ClipWidget(clip: clips[index]),
+    );
+  }
+}
+```
+
+This approach integrates more naturally with Flutter's widget system and requires less boilerplate.
+
+## Extension Systems
+
+### VS Code's Extension API
+
+VS Code exposes a rich JavaScript API for extensions:
+
+```typescript
+// VS Code extension
+export function activate(context: vscode.ExtensionContext) {
+  // Register a command
+  const disposable = vscode.commands.registerCommand('extension.helloWorld', () => {
+    vscode.window.showInformationMessage('Hello World!');
+  });
+  
+  // Register providers
+  const provider = new MyCompletionProvider();
+  vscode.languages.registerCompletionItemProvider('javascript', provider);
+  
+  context.subscriptions.push(disposable);
+}
+```
+
+Extensions run in separate processes and communicate with the main editor through a well-defined API.
+
+### FlipEdit's Extension System
+
+FlipEdit combines Flutter-based UI extensions with ComfyUI workflow integration:
+
+```dart
+// FlipEdit extension
+class BackgroundRemovalExtension extends FlipEditExtension {
+  @override
+  String get id => 'background-removal';
+  
+  @override
+  String get name => 'Background Removal';
+  
+  @override
+  Widget buildUI(BuildContext context) {
+    return BackgroundRemovalPanel();
+  }
+  
+  @override
+  Future<void> initialize() async {
+    // Register commands
+    di<CommandRegistry>().registerCommand(
+      'backgroundRemoval.remove',
+      removeBackground
+    );
+    
+    // Load ComfyUI workflow
+    await di<ComfyUIService>().loadWorkflow('assets/workflows/bg_removal.json');
+  }
+  
+  Future<void> removeBackground(Clip clip) async {
+    // Implementation using ComfyUI workflow
+  }
+}
+```
+
+FlipEdit's extensions are more tightly integrated with the main application since they're built with the same Flutter framework.
+
+## UI Composition
+
+### VS Code's Workbench
+
+VS Code's UI is composed of "parts" in a workbench layout:
+
+```typescript
+// VS Code part contribution
+export class EditorPart extends Part implements IEditorPart {
+  constructor(
+    @IWorkbenchLayoutService layoutService: IWorkbenchLayoutService
+  ) {
+    super('editor', layoutService);
+  }
+  
+  createContentArea(parent: HTMLElement): HTMLElement {
+    const editorContainer = document.createElement('div');
+    parent.appendChild(editorContainer);
+    // Set up editor UI
+    return editorContainer;
+  }
+}
+```
+
+Parts are arranged in a layout controlled by the workbench service, with drag handles for resizing.
+
+### FlipEdit's Panel System
+
+FlipEdit uses a panel grid system inspired by VS Code but implemented with Flutter widgets:
+
+```dart
+// FlipEdit panel layout
+class EditorScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // Left sidebar (like VS Code's activity bar)
+        const ExtensionSidebar(),
+        
+        // Main editor area with panels
+        Expanded(
+          child: PanelGridSystem(
+            initialPanels: [
+              PanelDefinition(
+                id: 'timeline',
+                title: 'Timeline',
+                content: TimelinePanel(),
+                position: PanelPosition.bottom,
+                size: 0.25,
+              ),
+              PanelDefinition(
+                id: 'preview',
+                title: 'Preview',
+                content: PreviewPanel(),
+                position: PanelPosition.center,
+              ),
+              PanelDefinition(
+                id: 'inspector',
+                title: 'Inspector',
+                content: InspectorPanel(),
+                position: PanelPosition.right,
+                size: 0.3,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+```
+
+Both systems provide resizable, dockable panels, but FlipEdit's implementation leverages Flutter's layout system.
+
+## Implementing VS Code-like Features in FlipEdit
+
+### Command System
+
+#### VS Code Command System:
+
+```typescript
+// Register a command
+vscode.commands.registerCommand('editor.formatDocument', () => {
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    // Format the document
+  }
+});
+
+// Execute a command
+vscode.commands.executeCommand('editor.formatDocument');
+```
+
+#### Equivalent in FlipEdit:
+
+```dart
+// Register a command
+class CommandService {
+  final Map<String, CommandHandler> _commands = {};
+  
+  void registerCommand(String id, CommandHandler handler) {
+    _commands[id] = handler;
+  }
+  
+  Future<void> executeCommand(String id, [dynamic args]) async {
+    final handler = _commands[id];
+    if (handler != null) {
+      await handler(args);
+    }
+  }
+}
+
+// Register during initialization
+di<CommandService>().registerCommand(
+  'editor.applyEffect',
+  (args) => di<EffectsViewModel>().applyEffect(args['type'])
+);
+
+// Execute a command
+di<CommandService>().executeCommand('editor.applyEffect', {'type': 'blur'});
+```
+
+### Status Bar Items
+
+#### VS Code Status Bar:
+
+```typescript
+// Create a status bar item
+const statusBarItem = vscode.window.createStatusBarItem(
+  vscode.StatusBarAlignment.Right, 
+  100
+);
+statusBarItem.text = "Ready";
+statusBarItem.tooltip = "Editor Status";
+statusBarItem.command = "extension.showStatus";
+statusBarItem.show();
+```
+
+#### Equivalent in FlipEdit:
+
+```dart
+// Status bar widget
+class EditorStatus extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    final status = watchPropertyValue((EditorViewModel vm) => vm.status);
+    
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 24,
+        color: Colors.grey[800],
+        child: Row(
+          children: [
+            // Left items
+            const SizedBox(width: 8),
+            Text(status, style: TextStyle(color: Colors.white)),
+            
+            const Spacer(),
+            
+            // Right items
+            IconButton(
+              icon: Icon(Icons.info, size: 16, color: Colors.white),
+              onPressed: () => di<CommandService>().executeCommand('editor.showStatus'),
+              tooltip: 'Editor Status',
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+### Activity Bar Extensions
+
+#### VS Code Activity Bar:
+
+```typescript
+// Contribute to the activity bar
+const viewContainer = vscode.window.createTreeView(
+  'myExtension.explorerView',
+  {
+    treeDataProvider: new MyTreeDataProvider()
+  }
+);
+```
+
+#### Equivalent in FlipEdit:
+
+```dart
+// Extension sidebar item
+class ExtensionSidebarItem extends StatelessWidget {
+  final String icon;
+  final String title;
+  final VoidCallback onTap;
+  final bool isActive;
+  
+  const ExtensionSidebarItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.isActive = false,
+  });
+  
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: title,
+      preferBelow: false,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          height: 48,
+          color: isActive ? Colors.blue : Colors.transparent,
+          child: Icon(
+            icon,
+            color: isActive ? Colors.white : Colors.grey,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Extension sidebar
+class ExtensionSidebar extends StatelessWidget with WatchItMixin {
+  @override
+  Widget build(BuildContext context) {
+    final activeExtensionId = watchPropertyValue(
+      (EditorViewModel vm) => vm.activeExtensionId
+    );
+    
+    final extensions = di<ExtensionRegistry>().getExtensions();
+    
+    return Container(
+      width: 48,
+      color: Colors.grey[900],
+      child: Column(
+        children: [
+          // Extension icons
+          ...extensions.map((extension) => ExtensionSidebarItem(
+            icon: extension.icon,
+            title: extension.name,
+            isActive: extension.id == activeExtensionId,
+            onTap: () => di<EditorViewModel>().setActiveExtension(extension.id),
+          )),
+          
+          const Spacer(),
+          
+          // Bottom actions
+          ExtensionSidebarItem(
+            icon: Icons.settings,
+            title: 'Settings',
+            onTap: () => di<CommandService>().executeCommand('workbench.action.openSettings'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+### QuickPick/Command Palette
+
+#### VS Code QuickPick:
+
+```typescript
+// Show quick pick
+const result = await vscode.window.showQuickPick(
+  ['Option 1', 'Option 2', 'Option 3'],
+  {
+    placeHolder: 'Select an option',
+  }
+);
+
+// Command palette is a special case of quick pick
+vscode.commands.registerCommand('workbench.action.showCommands', () => {
+  // Show all available commands
+});
+```
+
+#### Equivalent in FlipEdit:
+
+```dart
+// Quick pick dialog
+class QuickPickService {
+  Future<T?> showQuickPick<T>(
+    BuildContext context,
+    List<QuickPickItem<T>> items, {
+    String? placeholder,
+  }) async {
+    return showDialog<T>(
+      context: context,
+      builder: (context) => QuickPickDialog<T>(
+        items: items,
+        placeholder: placeholder,
+      ),
+    );
+  }
+  
+  Future<String?> showCommandPalette(BuildContext context) async {
+    final commands = di<CommandRegistry>().getAllCommands();
+    
+    final items = commands.map((cmd) => QuickPickItem<String>(
+      label: cmd.title,
+      value: cmd.id,
+      icon: cmd.icon,
+    )).toList();
+    
+    final commandId = await showQuickPick<String>(
+      context,
+      items,
+      placeholder: 'Type a command',
+    );
+    
+    if (commandId != null) {
+      di<CommandService>().executeCommand(commandId);
+    }
+    
+    return commandId;
+  }
+}
+
+// Quick pick dialog widget
+class QuickPickDialog<T> extends StatefulWidget {
+  final List<QuickPickItem<T>> items;
+  final String? placeholder;
+  
+  const QuickPickDialog({
+    required this.items,
+    this.placeholder,
+  });
+  
+  @override
+  _QuickPickDialogState<T> createState() => _QuickPickDialogState<T>();
+}
+
+class _QuickPickDialogState<T> extends State<QuickPickDialog<T>> {
+  final TextEditingController _controller = TextEditingController();
+  String _filter = '';
+  int _selectedIndex = 0;
+  
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      setState(() {
+        _filter = _controller.text.toLowerCase();
+        _selectedIndex = 0;
+      });
+    });
+  }
+  
+  List<QuickPickItem<T>> get filteredItems {
+    return widget.items.where((item) => 
+      item.label.toLowerCase().contains(_filter)
+    ).toList();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    final items = filteredItems;
+    
+    return Dialog(
+      child: Container(
+        width: 500,
+        constraints: BoxConstraints(maxHeight: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Search field
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  hintText: widget.placeholder ?? 'Search...',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                autofocus: true,
+                onSubmitted: (_) {
+                  if (items.isNotEmpty) {
+                    Navigator.of(context).pop(items[_selectedIndex].value);
+                  }
+                },
+              ),
+            ),
+            
+            // Results list
+            Flexible(
+              child: ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final isSelected = index == _selectedIndex;
+                  
+                  return ListTile(
+                    leading: item.icon != null ? Icon(item.icon) : null,
+                    title: Text(item.label),
+                    tileColor: isSelected ? Colors.blue.withOpacity(0.1) : null,
+                    onTap: () {
+                      Navigator.of(context).pop(item.value);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+### Context Menus
+
+#### VS Code Context Menu:
+
+```typescript
+// Register a context menu
+const disposable = vscode.commands.registerCommand(
+  'editor.showContextMenu',
+  (editor, position) => {
+    vscode.window.showContextMenu({
+      items: [
+        { label: 'Cut', command: 'editor.action.clipboardCutAction' },
+        { label: 'Copy', command: 'editor.action.clipboardCopyAction' },
+        { label: 'Paste', command: 'editor.action.clipboardPasteAction' },
+      ],
+      position: position, // Screen position
+    });
+  }
+);
+```
+
+#### Equivalent in FlipEdit:
+
+```dart
+// Context menu service
+class ContextMenuService {
+  Future<String?> showContextMenu(
+    BuildContext context,
+    List<ContextMenuItem> items, {
+    Offset? position,
+  }) async {
+    if (position == null) {
+      // Show as dialog if no position
+      return showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          children: items.map((item) => 
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(item.commandId),
+              child: Text(item.label),
+            )
+          ).toList(),
+        ),
+      );
+    } else {
+      // Show as popup menu
+      return showMenu<String>(
+        context: context,
+        position: RelativeRect.fromLTRB(
+          position.dx, 
+          position.dy, 
+          position.dx + 1, 
+          position.dy + 1
+        ),
+        items: items.map((item) => 
+          PopupMenuItem<String>(
+            value: item.commandId,
+            child: Text(item.label),
+          )
+        ).toList(),
+      );
+    }
+  }
+}
+
+// Usage
+void _showTimelineItemContextMenu(BuildContext context, Clip clip, Offset position) async {
+  final commandId = await di<ContextMenuService>().showContextMenu(
+    context,
+    [
+      ContextMenuItem(label: 'Split Clip', commandId: 'timeline.splitClip'),
+      ContextMenuItem(label: 'Delete Clip', commandId: 'timeline.deleteClip'),
+      ContextMenuItem(label: 'Add Effect', commandId: 'timeline.addEffect'),
+    ],
+    position: position,
+  );
+  
+  if (commandId != null) {
+    di<CommandService>().executeCommand(commandId, {'clipId': clip.id});
+  }
+}
+```
+
+## Mapping VS Code Concepts to FlipEdit
+
+Here's a quick reference to help understand the parallel concepts between VS Code and FlipEdit:
+
+| VS Code Concept | FlipEdit Equivalent |
+|-----------------|---------------------|
+| IService interface | Service class |
+| ServiceRegistry | get_it DI container |
+| Event emitter | ChangeNotifier |
+| Event subscription | watchPropertyValue |
+| Workbench parts | PanelGridSystem panels |
+| ViewContainers | ExtensionPanels |
+| CommandRegistry | CommandService |
+| StatusBar | StatusBarWidget |
+| IQuickInputService | QuickPickService |
+| IContextMenuService | ContextMenuService |
+| IEditorService | EditorViewModel + EditorService |
+| Extension context | ExtensionRegistry |
+
+## Best Practices for Implementing VS Code-like Features
+
+### 1. Separate UI from Logic
+
+Follow FlipEdit's MVVM pattern to separate UI (Views) from logic (ViewModels):
+
+```dart
+// Good: Separated UI and logic
+class EffectsViewModel extends ChangeNotifier {
+  // Logic for managing effects
+}
+
+class EffectsPanel extends StatelessWidget with WatchItMixin {
+  // UI for displaying and interacting with effects
+}
+
+// Avoid: Mixing UI and logic
+class EffectsPanel extends StatefulWidget {
+  @override
+  _EffectsPanelState createState() => _EffectsPanelState();
+}
+
+class _EffectsPanelState extends State<EffectsPanel> {
+  // Both UI and effect management logic mixed here
+}
+```
+
+### 2. Use Commands for Actions
+
+Implement a command system for actions that can be triggered from multiple places:
+
+```dart
+// Register command
+di<CommandService>().registerCommand(
+  'effects.applyBlur',
+  (args) => di<EffectsViewModel>().applyEffect('blur', args['intensity'])
+);
+
+// Execute from UI
+ElevatedButton(
+  onPressed: () => di<CommandService>().executeCommand(
+    'effects.applyBlur',
+    {'intensity': 0.5}
+  ),
+  child: Text('Apply Blur'),
+)
+```
+
+### 3. Use Events for Cross-Component Communication
+
+For complex cross-component communication, use an event bus pattern:
+
+```dart
+// Event definitions
+class ClipSelectedEvent {
+  final String clipId;
+  ClipSelectedEvent(this.clipId);
+}
+
+// Event bus service
+class EventBusService {
+  final _clipSelected = StreamController<ClipSelectedEvent>.broadcast();
+  Stream<ClipSelectedEvent> get onClipSelected => _clipSelected.stream;
+  
+  void fireClipSelected(String clipId) {
+    _clipSelected.add(ClipSelectedEvent(clipId));
+  }
+}
+
+// Publishing events
+di<EventBusService>().fireClipSelected('clip-123');
+
+// Subscribing to events
+class EffectsViewModel extends ChangeNotifier {
+  StreamSubscription? _subscription;
+  
+  void initialize() {
+    _subscription = di<EventBusService>().onClipSelected.listen((event) {
+      loadEffectsForClip(event.clipId);
+    });
+  }
+  
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+}
+```
+
+### 4. Use Panel System for UI Layout
+
+Leverage FlipEdit's panel system for flexible layouts:
+
+```dart
+// Define panels in view models
+class EditorViewModel extends ChangeNotifier {
+  List<PanelDefinition> getPanelDefinitions() {
+    return [
+      PanelDefinition(
+        id: 'timeline',
+        title: 'Timeline',
+        content: TimelinePanel(),
+        position: PanelPosition.bottom,
+        size: 0.25,
+        visible: _showTimeline,
+      ),
+      // Other panels...
+    ];
+  }
+  
+  void togglePanel(String panelId) {
+    // Toggle panel visibility
+    // ...
+    notifyListeners();
+  }
+}
+
+// Use panels in UI
+class EditorScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final panels = di<EditorViewModel>().getPanelDefinitions();
+    
+    return PanelGridSystem(
+      initialPanels: panels,
+      onPanelResized: (panelId, newSize) {
+        di<EditorViewModel>().updatePanelSize(panelId, newSize);
+      },
+    );
+  }
+}
+```
+
+## Conclusion
+
+While VS Code and FlipEdit use different technologies and architectural approaches, they share many conceptual similarities. Both have a strong focus on:
+
+1. **Separation of concerns** - UI is separate from business logic
+2. **Service-oriented architecture** - Core functionality is organized into services
+3. **Component-based UI** - The UI is composed of reusable components
+4. **Extensibility** - The architecture is designed to be extended
+
+When implementing features in FlipEdit, you can take inspiration from VS Code's architecture while leveraging Flutter's strengths and the MVVM pattern. This hybrid approach gives you the best of both worlds: the well-established patterns of VS Code and the reactive, declarative nature of Flutter.
+
+By understanding the parallels between these two systems, you can more easily conceptualize how to implement VS Code-like features in FlipEdit, creating a familiar and powerful editing experience.
+
+## Next Steps
+
+- [Working with ViewModels](./viewmodels.mdx)
+- [State Management with get_it and watch_it](./get-it-and-watch-it.mdx)
+- [Creating Extensions](../extensions/creating.mdx)
+- [Panel System](./panel-system.mdx)
