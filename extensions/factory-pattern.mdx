@@ -1,0 +1,707 @@
+---
+title: 'Factory Pattern in Extensions'
+description: 'Using the factory pattern to create extensible components in FlipEdit'
+---
+
+# Factory Pattern in FlipEdit Extensions
+
+This guide explains how the factory pattern is used within FlipEdit's extension system to create flexible, extensible components. Understanding these patterns will help you create extensions that seamlessly integrate with FlipEdit's architecture.
+
+## What is the Factory Pattern?
+
+The factory pattern is a creational design pattern that provides an interface for creating objects without specifying their concrete classes. In FlipEdit's extension system, factories enable:
+
+1. **Extensibility** - New object types can be added without changing existing code
+2. **Standardization** - Objects are created with consistent properties and behaviors
+3. **Encapsulation** - Complex creation logic is hidden from the consumer
+4. **Serialization** - Factories can create objects from serialized data
+
+## Extension Component Factories
+
+FlipEdit's extension system uses several factories to create various components:
+
+### 1. Effect Factory
+
+The `EffectFactory` creates different types of effects that can be applied to media:
+
+```dart
+/// Factory for creating effects
+class EffectFactory {
+  // Registry of effect creators keyed by effect type
+  static final Map<String, EffectCreator> _effectCreators = {};
+  
+  /// Register a new effect creator
+  static void registerEffectCreator(String effectType, EffectCreator creator) {
+    _effectCreators[effectType] = creator;
+  }
+  
+  /// Create an effect by type
+  static IEffect createEffect(
+    String effectType, {
+    required String id,
+    required String name,
+    Map<String, dynamic> parameters = const {},
+    int startFrame = 0,
+    int durationFrames = 0,
+  }) {
+    // First check if we have a creator for this type
+    final creator = _effectCreators[effectType];
+    if (creator != null) {
+      return creator(
+        id: id,
+        name: name,
+        parameters: parameters,
+        startFrame: startFrame,
+        durationFrames: durationFrames,
+      );
+    }
+    
+    // Fall back to a base effect
+    return BaseEffect(
+      id: id,
+      name: name,
+      type: EffectType.basic,
+      parameters: parameters,
+      startFrame: startFrame,
+      durationFrames: durationFrames,
+    );
+  }
+  
+  /// Create an effect from a serialized representation
+  static IEffect createFromJson(Map<String, dynamic> json) {
+    final effectType = json['type'] as String;
+    
+    // Check if we have a registered creator for this type
+    final creator = _effectCreators[effectType];
+    if (creator != null) {
+      return creator(
+        id: json['id'],
+        name: json['name'],
+        parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
+        startFrame: json['startFrame'] ?? 0,
+        durationFrames: json['durationFrames'] ?? 0,
+      );
+    }
+    
+    // Fall back to a base effect
+    return BaseEffect(
+      id: json['id'],
+      name: json['name'],
+      type: EffectType.basic,
+      parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
+      startFrame: json['startFrame'] ?? 0,
+      durationFrames: json['durationFrames'] ?? 0,
+    );
+  }
+}
+
+/// Type definition for effect creator functions
+typedef EffectCreator = IEffect Function({
+  required String id,
+  required String name,
+  Map<String, dynamic> parameters,
+  int startFrame,
+  int durationFrames,
+});
+```
+
+### 2. Panel Factory
+
+The `PanelFactory` creates UI panels for extensions:
+
+```dart
+/// Factory for creating extension panels
+class PanelFactory {
+  // Registry of panel creators keyed by panel type
+  static final Map<String, PanelCreator> _panelCreators = {};
+  
+  /// Register a new panel creator
+  static void registerPanelCreator(String panelType, PanelCreator creator) {
+    _panelCreators[panelType] = creator;
+  }
+  
+  /// Create a panel by type
+  static Widget createPanel(
+    String panelType, {
+    required String id,
+    required String title,
+    Map<String, dynamic> configuration = const {},
+  }) {
+    // Check if we have a creator for this type
+    final creator = _panelCreators[panelType];
+    if (creator != null) {
+      return creator(
+        id: id,
+        title: title,
+        configuration: configuration,
+      );
+    }
+    
+    // Return a placeholder panel if type not found
+    return PlaceholderPanel(
+      id: id,
+      title: title,
+      message: 'Panel type "$panelType" not found',
+    );
+  }
+}
+
+/// Type definition for panel creator functions
+typedef PanelCreator = Widget Function({
+  required String id,
+  required String title,
+  Map<String, dynamic> configuration,
+});
+```
+
+### 3. Workflow Factory
+
+The `WorkflowFactory` creates and manages ComfyUI workflows:
+
+```dart
+/// Factory for creating ComfyUI workflows
+class WorkflowFactory {
+  // Registry of workflow creators keyed by workflow type
+  static final Map<String, WorkflowCreator> _workflowCreators = {};
+  
+  /// Register a new workflow creator
+  static void registerWorkflowCreator(String workflowType, WorkflowCreator creator) {
+    _workflowCreators[workflowType] = creator;
+  }
+  
+  /// Create a workflow by type
+  static Workflow createWorkflow(
+    String workflowType, {
+    required String id,
+    required String name,
+    Map<String, dynamic> parameters = const {},
+  }) {
+    // Check if we have a creator for this type
+    final creator = _workflowCreators[workflowType];
+    if (creator != null) {
+      return creator(
+        id: id,
+        name: name,
+        parameters: parameters,
+      );
+    }
+    
+    // Fall back to an empty workflow
+    return Workflow(
+      id: id,
+      name: name,
+      nodes: [],
+      connections: [],
+    );
+  }
+  
+  /// Load a workflow from a JSON file
+  static Future<Workflow> loadFromFile(String path) async {
+    final content = await File(path).readAsString();
+    final json = jsonDecode(content) as Map<String, dynamic>;
+    
+    return Workflow(
+      id: json['id'] ?? generateUniqueId(),
+      name: json['name'] ?? 'Untitled Workflow',
+      nodes: _parseNodes(json['nodes'] ?? []),
+      connections: _parseConnections(json['connections'] ?? []),
+    );
+  }
+  
+  // Helper methods for parsing workflow components
+  static List<Node> _parseNodes(List<dynamic> nodesJson) {
+    // Implementation details
+    return [];
+  }
+  
+  static List<Connection> _parseConnections(List<dynamic> connectionsJson) {
+    // Implementation details
+    return [];
+  }
+}
+
+/// Type definition for workflow creator functions
+typedef WorkflowCreator = Workflow Function({
+  required String id,
+  required String name,
+  Map<String, dynamic> parameters,
+});
+```
+
+## Registering Extension Factories
+
+Extensions register their custom components with these factories during activation:
+
+```dart
+class BackgroundRemovalExtension implements IExtension {
+  @override
+  String get id => 'background-removal';
+  
+  @override
+  String get name => 'Background Removal';
+  
+  @override
+  Future<void> activate(ExtensionContext context) async {
+    // Register a custom effect
+    EffectFactory.registerEffectCreator(
+      'background-removal',
+      ({
+        required String id,
+        required String name,
+        Map<String, dynamic> parameters = const {},
+        int startFrame = 0,
+        int durationFrames = 0,
+      }) {
+        return BackgroundRemovalEffect(
+          id: id,
+          name: name,
+          parameters: parameters,
+          startFrame: startFrame,
+          durationFrames: durationFrames,
+          threshold: parameters['threshold'] ?? 0.5,
+        );
+      },
+    );
+    
+    // Register a custom panel
+    PanelFactory.registerPanelCreator(
+      'background-removal-panel',
+      ({
+        required String id,
+        required String title,
+        Map<String, dynamic> configuration = const {},
+      }) {
+        return BackgroundRemovalPanel(
+          id: id,
+          title: title,
+          showAdvancedOptions: configuration['showAdvancedOptions'] ?? false,
+        );
+      },
+    );
+    
+    // Register a custom workflow
+    WorkflowFactory.registerWorkflowCreator(
+      'background-removal-workflow',
+      ({
+        required String id,
+        required String name,
+        Map<String, dynamic> parameters = const {},
+      }) {
+        return createBackgroundRemovalWorkflow(
+          id: id,
+          name: name,
+          threshold: parameters['threshold'] ?? 0.5,
+          refinementLevel: parameters['refinementLevel'] ?? 1,
+        );
+      },
+    );
+    
+    // Load a workflow from a file
+    final workflow = await WorkflowFactory.loadFromFile(
+      'extensions/background-removal/workflows/basic.json',
+    );
+    
+    // Register the workflow with ComfyUI service
+    await di<ComfyUIService>().registerWorkflow(workflow);
+  }
+  
+  @override
+  Future<void> deactivate() async {
+    // Cleanup code
+  }
+}
+```
+
+## Factory Method vs Abstract Factory
+
+FlipEdit uses two factory pattern variations:
+
+### Factory Method Pattern
+
+The Factory Method pattern defines an interface for creating objects but lets subclasses decide which classes to instantiate. FlipEdit's factories mostly use this pattern with static methods:
+
+```dart
+// Factory method pattern example
+class EffectFactory {
+  static IEffect createBlurEffect({
+    required String id,
+    required String name,
+    double blurRadius = 5.0,
+  }) {
+    final baseEffect = BaseEffect(
+      id: id,
+      name: name,
+      type: EffectType.blur,
+      parameters: {'blurRadius': blurRadius},
+    );
+    
+    return BlurEffectDecorator(
+      decoratedEffect: baseEffect,
+      blurRadius: blurRadius,
+    );
+  }
+}
+```
+
+### Abstract Factory Pattern
+
+The Abstract Factory pattern provides an interface for creating families of related objects. This is used for more complex component creation:
+
+```dart
+/// Abstract factory interface for creating UI components
+abstract class UIComponentFactory {
+  Widget createInspectorPanel(IEffect effect);
+  Widget createTimelineItem(IClip clip);
+  Widget createToolbar(List<String> actions);
+}
+
+/// Factory implementation for the default UI style
+class DefaultUIComponentFactory implements UIComponentFactory {
+  @override
+  Widget createInspectorPanel(IEffect effect) {
+    return DefaultInspectorPanel(effect: effect);
+  }
+  
+  @override
+  Widget createTimelineItem(IClip clip) {
+    return DefaultTimelineItem(clip: clip);
+  }
+  
+  @override
+  Widget createToolbar(List<String> actions) {
+    return DefaultToolbar(actions: actions);
+  }
+}
+
+/// Factory implementation for a compact UI style
+class CompactUIComponentFactory implements UIComponentFactory {
+  @override
+  Widget createInspectorPanel(IEffect effect) {
+    return CompactInspectorPanel(effect: effect);
+  }
+  
+  @override
+  Widget createTimelineItem(IClip clip) {
+    return CompactTimelineItem(clip: clip);
+  }
+  
+  @override
+  Widget createToolbar(List<String> actions) {
+    return CompactToolbar(actions: actions);
+  }
+}
+```
+
+## Comparison with VS Code's Factory Pattern
+
+VS Code also uses factories extensively for its extension system. Here's a comparison:
+
+### VS Code's Factory Implementation (TypeScript)
+
+```typescript
+// VS Code extension factory
+export class ExtensionFactory {
+  constructor(
+    @IInstantiationService private readonly instantiationService: IInstantiationService,
+    @IExtensionService private readonly extensionService: IExtensionService
+  ) {}
+  
+  createExtension(description: IExtensionDescription): IExtension {
+    // Create the appropriate extension type based on the description
+    if (description.engine === 'browser') {
+      return this.instantiationService.createInstance(
+        BrowserExtension,
+        description
+      );
+    } else {
+      return this.instantiationService.createInstance(
+        NodeExtension,
+        description
+      );
+    }
+  }
+  
+  createExtensionFromManifest(manifest: IExtensionManifest): IExtension {
+    const description = this.createExtensionDescription(manifest);
+    return this.createExtension(description);
+  }
+  
+  private createExtensionDescription(manifest: IExtensionManifest): IExtensionDescription {
+    // Implementation details
+    return {} as IExtensionDescription;
+  }
+}
+```
+
+### FlipEdit's Factory Implementation (Dart)
+
+```dart
+/// FlipEdit extension factory
+class ExtensionFactory {
+  final ExtensionRegistry _registry;
+  final LogService _logService;
+  
+  ExtensionFactory({
+    required ExtensionRegistry registry,
+    required LogService logService,
+  })  : _registry = registry,
+        _logService = logService;
+  
+  Future<IExtension> createExtension(ExtensionManifest manifest) async {
+    // Create the appropriate extension type based on the manifest
+    switch (manifest.type) {
+      case 'workflow':
+        return WorkflowExtension(
+          manifest: manifest,
+          registry: _registry,
+          logService: _logService,
+        );
+      case 'effect':
+        return EffectExtension(
+          manifest: manifest,
+          registry: _registry,
+          logService: _logService,
+        );
+      case 'ui':
+        return UIExtension(
+          manifest: manifest,
+          registry: _registry,
+          logService: _logService,
+        );
+      default:
+        return GenericExtension(
+          manifest: manifest,
+          registry: _registry,
+          logService: _logService,
+        );
+    }
+  }
+  
+  Future<IExtension> createExtensionFromFolder(String path) async {
+    final manifestFile = File('$path/manifest.json');
+    if (!await manifestFile.exists()) {
+      throw Exception('Extension manifest not found at $path');
+    }
+    
+    final content = await manifestFile.readAsString();
+    final json = jsonDecode(content) as Map<String, dynamic>;
+    final manifest = ExtensionManifest.fromJson(json);
+    
+    return createExtension(manifest);
+  }
+}
+```
+
+### Key Differences and Similarities
+
+1. **Dependency Injection** - VS Code injects services, FlipEdit passes them in constructor
+2. **Async Handling** - FlipEdit uses async/await, VS Code uses synchronous creation
+3. **Type Determination** - Both determine type based on manifest/description
+4. **Initialization Flow** - Both follow a similar manifest-to-extension flow
+5. **Service Usage** - Both use services to help with extension creation
+
+## Best Practices for Using Factories in Extensions
+
+### 1. Register Components During Activation
+
+Register your custom components during extension activation:
+
+```dart
+@override
+Future<void> activate(ExtensionContext context) async {
+  // Register custom components
+  EffectFactory.registerEffectCreator('my-effect', _createMyEffect);
+  PanelFactory.registerPanelCreator('my-panel', _createMyPanel);
+  
+  // Other activation code
+}
+```
+
+### 2. Deregister During Deactivation
+
+Remove your registrations during deactivation to prevent memory leaks:
+
+```dart
+@override
+Future<void> deactivate() async {
+  // Deregister custom components (if the factory supports this)
+  EffectFactory.deregisterEffectCreator('my-effect');
+  PanelFactory.deregisterPanelCreator('my-panel');
+  
+  // Other cleanup code
+}
+```
+
+### 3. Use Unique Identifiers
+
+Use unique identifiers for your components to avoid conflicts:
+
+```dart
+// Good: Use extension-prefixed identifiers
+EffectFactory.registerEffectCreator('my-extension.blur-effect', _createBlurEffect);
+
+// Avoid: Generic names without prefixes
+EffectFactory.registerEffectCreator('blur', _createBlurEffect); // Could conflict
+```
+
+### 4. Implement Serialization Support
+
+Ensure your components can be properly serialized and deserialized:
+
+```dart
+class MyCustomEffect extends EffectDecorator {
+  final double intensity;
+  
+  MyCustomEffect({
+    required IEffect decoratedEffect,
+    this.intensity = 1.0,
+  }) : super(decoratedEffect);
+  
+  @override
+  Map<String, dynamic> decoratorToJson() {
+    return {
+      'type': 'my-extension.custom-effect',
+      'intensity': intensity,
+    };
+  }
+  
+  // Factory method for deserialization
+  static IEffect fromJson(
+    Map<String, dynamic> json,
+    IEffect baseEffect,
+  ) {
+    return MyCustomEffect(
+      decoratedEffect: baseEffect,
+      intensity: json['intensity'] ?? 1.0,
+    );
+  }
+}
+```
+
+### 5. Handle Factory Registration in a Central Location
+
+Create a central registration method for all your factory contributions:
+
+```dart
+class MyExtension implements IExtension {
+  @override
+  Future<void> activate(ExtensionContext context) async {
+    _registerFactories();
+    // Other activation code
+  }
+  
+  void _registerFactories() {
+    // Register all factory creators in one place
+    _registerEffectFactories();
+    _registerPanelFactories();
+    _registerWorkflowFactories();
+  }
+  
+  void _registerEffectFactories() {
+    EffectFactory.registerEffectCreator('my-extension.blur', _createBlurEffect);
+    EffectFactory.registerEffectCreator('my-extension.sharpen', _createSharpenEffect);
+  }
+  
+  void _registerPanelFactories() {
+    PanelFactory.registerPanelCreator('my-extension.settings', _createSettingsPanel);
+    PanelFactory.registerPanelCreator('my-extension.controls', _createControlsPanel);
+  }
+  
+  void _registerWorkflowFactories() {
+    WorkflowFactory.registerWorkflowCreator('my-extension.basic', _createBasicWorkflow);
+    WorkflowFactory.registerWorkflowCreator('my-extension.advanced', _createAdvancedWorkflow);
+  }
+}
+```
+
+## Creating Your Own Factories
+
+You can create your own factories for extension-specific components:
+
+```dart
+/// Factory for creating custom UI components in my extension
+class MyUIComponentFactory {
+  static final Map<String, WidgetCreator> _creators = {};
+  
+  /// Register a widget creator
+  static void registerCreator(String type, WidgetCreator creator) {
+    _creators[type] = creator;
+  }
+  
+  /// Create a widget by type
+  static Widget createWidget(
+    String type, {
+    required String id,
+    Map<String, dynamic> properties = const {},
+  }) {
+    final creator = _creators[type];
+    if (creator != null) {
+      return creator(id: id, properties: properties);
+    }
+    
+    return Text('Unknown widget type: $type');
+  }
+}
+
+typedef WidgetCreator = Widget Function({
+  required String id,
+  Map<String, dynamic> properties,
+});
+```
+
+## VS Code-inspired Factory Extensions
+
+Taking inspiration from VS Code's contribution points, you can create a declarative factory registration system:
+
+```dart
+/// Register components from manifest
+void registerContributions(ExtensionManifest manifest) {
+  // Register effect contributions
+  final effects = manifest.contributes?['effects'] as List<dynamic>?;
+  if (effects != null) {
+    for (final effect in effects) {
+      final effectData = effect as Map<String, dynamic>;
+      EffectFactory.registerEffectCreator(
+        effectData['id'],
+        ({
+          required String id,
+          required String name,
+          Map<String, dynamic> parameters = const {},
+          int startFrame = 0,
+          int durationFrames = 0,
+        }) {
+          // Use reflection or a registry to find the effect implementation
+          return _createEffectFromContribution(
+            effectData,
+            id: id,
+            name: name,
+            parameters: parameters,
+            startFrame: startFrame,
+            durationFrames: durationFrames,
+          );
+        },
+      );
+    }
+  }
+  
+  // Register other contributions (panels, workflows, etc.)
+}
+```
+
+## Conclusion
+
+The factory pattern is a powerful tool for creating extensible architectures. By understanding and leveraging factories in FlipEdit's extension system, you can:
+
+1. **Create custom components** that integrate seamlessly with the application
+2. **Extend the functionality** of existing components without modifying core code
+3. **Maintain a clean architecture** with proper separation of concerns
+4. **Support serialization and deserialization** for persistence
+
+Following these patterns will ensure your extensions work harmoniously with FlipEdit's architecture and provide a consistent experience for users.
+
+## Next Steps
+
+- [Decorator Pattern in Extensions](./decorator-pattern.mdx) - Learn how to use decorators in extensions
+- [Creating Extensions](./creating.mdx) - Step-by-step guide to creating extensions
+- [Extension API Reference](../api-reference/extension-api.mdx) - Complete API documentation
+- [FlipEdit Architecture Overview](../architecture/overview.mdx) - Understand FlipEdit's overall architecture

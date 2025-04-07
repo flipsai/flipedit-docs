@@ -14,14 +14,6 @@
         "tab": "Guides",
         "groups": [
           {
-            "group": "Get Started",
-            "pages": [
-              "introduction",
-              "quickstart",
-              "development"
-            ]
-          },
-          {
             "group": "Architecture",
             "pages": [
               "architecture/overview",
@@ -29,7 +21,8 @@
               "architecture/state-management",
               "architecture/decorator-pattern",
               "architecture/effect-pipeline",
-              "architecture/extension-system"
+              "architecture/extension-system",
+              "architecture/factories-interfaces-decorators"
             ]
           },
           {
@@ -37,7 +30,15 @@
             "pages": [
               "development/get-it-and-watch-it",
               "development/viewmodels",
-              "development/vscode-vs-flipedit"
+              "development/vscode-vs-flipedit",
+              "development/design-patterns-comparison"
+            ]
+          },
+          {
+            "group": "Extensions",
+            "pages": [
+              "extensions/factory-pattern"
+              
             ]
           },
           {
@@ -76,21 +77,6 @@
     ],
     "global": {
       "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://flipedit.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Community",
-          "href": "https://flipedit.com/community",
-          "icon": "slack"
-        },
-        {
-          "anchor": "GitHub",
-          "href": "https://github.com/flipedit/flipedit",
-          "icon": "github"
-        }
       ]
     }
   },
