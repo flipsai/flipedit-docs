@@ -49,6 +49,7 @@
               "essentials/images",
               "essentials/settings",
               "essentials/navigation",
+              "essentials/tabs-and-panels",
               "essentials/reusable-snippets"
             ]
           }
