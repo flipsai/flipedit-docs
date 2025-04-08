@@ -44,12 +44,12 @@ Models in FlipEdit use interfaces and implementations to support the decorator p
 
 ViewModels serve as the intermediary between views and models:
 
-- Expose data for the UI
+- Expose data for the UI using ValueNotifier objects
 - Handle user interactions
 - Convert model data into view-friendly formats
 - Coordinate with services for complex operations
 
-All ViewModels in FlipEdit implement `ChangeNotifier` and are integrated with the `watch_it` state management system.
+All ViewModels in FlipEdit expose state through ValueNotifier objects that are observed by views for reactive updates.
 
 ### Views Layer
 
@@ -60,7 +60,7 @@ The views layer contains all the UI components:
 - Visual representation of data
 - No business logic, only UI logic
 
-Views observe ViewModels using the `watchPropertyValue` pattern to automatically update when data changes.
+Views observe ViewModels using the `watchValue` pattern to automatically update when data changes.
 
 ### Services Layer
 
@@ -71,7 +71,7 @@ Services provide essential functionality across the application:
 - ComfyUI integration
 - Persistence
 
-Services are registered using dependency injection with `get_it` and accessed by ViewModels as needed.
+Services are registered using dependency injection with `watch_it` and accessed by ViewModels as needed.
 
 ## Key Design Patterns
 
@@ -123,7 +123,7 @@ Factories simplify the creation of complex objects:
 
 ### Dependency Injection
 
-FlipEdit uses the `get_it` service locator pattern for dependency injection:
+FlipEdit uses the `watch_it` service locator pattern for dependency injection:
 
 - Services are registered at app startup
 - ViewModels access services through the service locator
@@ -131,20 +131,20 @@ FlipEdit uses the `get_it` service locator pattern for dependency injection:
 
 ## State Management
 
-State management in FlipEdit is handled using the `watch_it` library, which builds on `get_it`:
+State management in FlipEdit is handled using the `watch_it` library:
 
-- ViewModels are registered as singletons
-- UI components watch ViewModel properties
-- The UI automatically updates when ViewModel properties change
+- ViewModels expose state through ValueNotifier objects
+- UI components observe these ValueNotifier objects 
+- The UI automatically updates when values change
 
 ```dart
 class MyWidget extends StatelessWidget with WatchItMixin {
   @override
   Widget build(BuildContext context) {
-    final project = watchPropertyValue((ProjectViewModel vm) => vm.currentProject);
+    final project = watchValue((ProjectViewModel vm) => vm.currentProjectNotifier);
     
     // UI automatically updates when currentProject changes
-    return Text(project.name);
+    return Text(project?.name ?? 'No project');
   }
 }
 ```
@@ -175,7 +175,8 @@ sequenceDiagram
     Service->>Model: Modifies data
     Model-->>Service: Returns updated data
     Service-->>ViewModel: Returns result
-    ViewModel-->>View: Updates state
+    ViewModel-->>ViewModel: Updates ValueNotifier
+    ViewModel-->>View: View reacts to changes
     View-->>User: Shows updated UI
 ```
 

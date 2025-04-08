@@ -1,667 +1,334 @@
 ---
 title: 'Factories, Interfaces, and Decorators'
-description: 'Understanding core design patterns in FlipEdit'
+description: 'Understanding the core design patterns in FlipEdit'
 ---
 
-# Factories, Interfaces, and Decorators in FlipEdit
+# Factories, Interfaces, and Decorators
 
-FlipEdit relies on several key design patterns to create a maintainable, extensible video editing application. This document explains how factories, interfaces, and decorators work together to create a clean, flexible architecture.
+FlipEdit uses several design patterns to create a flexible, maintainable architecture. This guide explains how factories, interfaces, and decorators are implemented in the application.
 
-## Interfaces and Abstractions
+## Interfaces and Implementations
 
-Interfaces define contracts that classes must fulfill, enabling polymorphism and flexible component composition. In Dart, interfaces are typically defined as abstract classes.
-
-### Core Interfaces in FlipEdit
-
-FlipEdit defines several key interfaces that form the foundation of its architecture:
+FlipEdit makes extensive use of interfaces to define contracts that various implementations can fulfill:
 
 ```dart
-/// Represents any effect that can be applied to media
+// Interface definition
 abstract class IEffect {
   String get id;
-  String get name;
-  EffectType get type;
-  Map<String, dynamic> get parameters;
-  int get startFrame;
-  int get durationFrames;
-  
-  /// Process frame data and return modified data
   Map<String, dynamic> process(Map<String, dynamic> frameData);
-  
-  /// Serialize to JSON
-  Map<String, dynamic> toJson();
 }
 
-/// Represents a media clip in the timeline
-abstract class IClip {
-  String get id;
-  String get name;
-  ClipType get type;
-  String get filePath;
-  int get startFrame;
-  int get durationFrames;
-  List<IEffect> get effects;
-  Map<String, dynamic> get metadata;
-  
-  /// Get a processed frame at the given position
-  Future<Map<String, dynamic>> getProcessedFrame(int framePosition);
-  
-  /// Serialize to JSON
-  Map<String, dynamic> toJson();
-}
-```
-
-### Benefits of Interfaces in FlipEdit
-
-Using interfaces provides several key advantages:
-
-1. **Abstraction** - Components only depend on the interface, not specific implementations
-2. **Flexibility** - Different implementations can be swapped without changing dependent code
-3. **Testability** - Interfaces can be easily mocked for testing
-4. **Extension** - New implementations can be added without modifying existing code
-
-For example, FlipEdit can handle different media types by implementing the `IClip` interface:
-
-```dart
-class VideoClip implements IClip {
-  // Implementation for video clips
-}
-
-class AudioClip implements IClip {
-  // Implementation for audio clips
-}
-
-class ImageSequenceClip implements IClip {
-  // Implementation for image sequences
-}
-```
-
-## The Decorator Pattern
-
-The decorator pattern lets you attach new behaviors to objects by placing them inside wrapper objects that contain these behaviors. This pattern is central to FlipEdit's non-destructive editing approach.
-
-### Decorator Pattern Implementation
-
-FlipEdit uses the decorator pattern extensively for effects:
-
-```dart
-/// Base effect implementation
+// Base implementation
 class BaseEffect implements IEffect {
   @override
   final String id;
-  @override
-  final String name;
-  @override
-  final EffectType type;
-  @override
-  final Map<String, dynamic> parameters;
-  @override
-  final int startFrame;
-  @override
-  final int durationFrames;
   
-  BaseEffect({
-    required this.id,
-    required this.name,
-    required this.type,
-    required this.parameters,
-    required this.startFrame,
-    required this.durationFrames,
-  });
+  BaseEffect({required this.id});
   
   @override
   Map<String, dynamic> process(Map<String, dynamic> frameData) {
-    // Simple pass-through implementation
+    // Basic implementation
     return frameData;
-  }
-  
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'type': type.toString(),
-      'parameters': parameters,
-      'startFrame': startFrame,
-      'durationFrames': durationFrames,
-    };
   }
 }
 
-/// Abstract decorator for effects
+// Specific implementation
+class BlurEffect implements IEffect {
+  @override
+  final String id;
+  final double intensity;
+  
+  BlurEffect({required this.id, this.intensity = 0.5});
+  
+  @override
+  Map<String, dynamic> process(Map<String, dynamic> frameData) {
+    // Apply blur effect with intensity
+    return applyBlur(frameData, intensity);
+  }
+}
+```
+
+### Benefits of Interface-Based Design
+
+1. **Loose coupling** - Components depend on abstractions, not concrete implementations
+2. **Testability** - Easy to create mock implementations for testing
+3. **Extensibility** - New implementations can be added without modifying existing code
+4. **Clarity** - Interfaces define clear contracts between components
+
+## Factory Pattern
+
+The Factory Pattern is used to create objects without specifying the exact class to instantiate. FlipEdit uses factories for creating complex objects like clips and effects:
+
+```dart
+// Effect factory
+class EffectFactory {
+  final Map<String, EffectBuilder> _builders = {};
+  
+  // Register effect types
+  void registerEffectType(String type, EffectBuilder builder) {
+    _builders[type] = builder;
+  }
+  
+  // Create effect instance
+  IEffect createEffect(String type, Map<String, dynamic> params) {
+    final builder = _builders[type];
+    if (builder == null) {
+      throw Exception('Unknown effect type: $type');
+    }
+    
+    return builder(params);
+  }
+}
+
+// Example usage
+void setupEffects() {
+  final effectFactory = di<EffectFactory>();
+  
+  // Register effect types
+  effectFactory.registerEffectType('blur', (params) => 
+    BlurEffect(
+      id: params['id'] ?? generateId(), 
+      intensity: params['intensity'] ?? 0.5
+    )
+  );
+  
+  effectFactory.registerEffectType('color', (params) => 
+    ColorEffect(
+      id: params['id'] ?? generateId(),
+      hue: params['hue'] ?? 0.0,
+      saturation: params['saturation'] ?? 1.0,
+      value: params['value'] ?? 1.0
+    )
+  );
+}
+
+// Accessing the factory
+final effect = di<EffectFactory>().createEffect('blur', {'intensity': 0.7});
+```
+
+### Factory Registration in ViewModels
+
+ViewModels access factories through dependency injection:
+
+```dart
+class EffectsViewModel {
+  final EffectFactory _effectFactory = di<EffectFactory>();
+  
+  // State
+  final ValueNotifier<List<IEffect>> effectsNotifier = ValueNotifier<List<IEffect>>([]);
+  
+  Future<void> addEffect(String type, Map<String, dynamic> params) async {
+    final newEffect = _effectFactory.createEffect(type, params);
+    effectsNotifier.value = [...effectsNotifier.value, newEffect];
+  }
+}
+```
+
+## Decorator Pattern
+
+The Decorator Pattern allows behavior to be added to an object dynamically. FlipEdit uses decorators extensively for effects:
+
+```dart
+// Decorator base class
 abstract class EffectDecorator implements IEffect {
   final IEffect decoratedEffect;
   
   EffectDecorator(this.decoratedEffect);
   
-  // Forward properties to decorated effect
   @override
   String get id => decoratedEffect.id;
+}
+
+// Concrete decorator
+class BlurDecorator extends EffectDecorator {
+  final double intensity;
   
-  @override
-  String get name => decoratedEffect.name;
-  
-  @override
-  EffectType get type => decoratedEffect.type;
-  
-  @override
-  Map<String, dynamic> get parameters => decoratedEffect.parameters;
-  
-  @override
-  int get startFrame => decoratedEffect.startFrame;
-  
-  @override
-  int get durationFrames => decoratedEffect.durationFrames;
+  BlurDecorator(IEffect decoratedEffect, {this.intensity = 0.5}) 
+    : super(decoratedEffect);
   
   @override
   Map<String, dynamic> process(Map<String, dynamic> frameData) {
-    // Apply the wrapped effect first
+    // First process with the decorated effect
     final processedData = decoratedEffect.process(frameData);
-    // Then apply this decorator's effect
-    return applyDecoration(processedData);
-  }
-  
-  @override
-  Map<String, dynamic> toJson() {
-    final json = decoratedEffect.toJson();
-    json['decorator'] = decoratorToJson();
-    return json;
-  }
-  
-  // Abstract methods for concrete decorators to implement
-  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData);
-  Map<String, dynamic> decoratorToJson();
-}
-```
-
-### Concrete Decorators
-
-Concrete decorator classes implement specific effects:
-
-```dart
-class FilterEffectDecorator extends EffectDecorator {
-  final double intensity;
-  final Map<String, double> colorAdjustments;
-  
-  FilterEffectDecorator({
-    required IEffect decoratedEffect,
-    this.intensity = 1.0,
-    this.colorAdjustments = const {},
-  }) : super(decoratedEffect);
-  
-  @override
-  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData) {
-    // Apply color adjustments based on intensity
-    Map<String, dynamic> result = Map<String, dynamic>.from(frameData);
     
-    // Implementation details for applying the filter
-    // ...
-    
-    return result;
-  }
-  
-  @override
-  Map<String, dynamic> decoratorToJson() {
-    return {
-      'type': 'filter',
-      'intensity': intensity,
-      'colorAdjustments': colorAdjustments,
-    };
+    // Then apply our blur
+    return applyBlur(processedData, intensity);
   }
 }
 
-class BlurEffectDecorator extends EffectDecorator {
-  final double blurRadius;
-  
-  BlurEffectDecorator({
-    required IEffect decoratedEffect,
-    this.blurRadius = 5.0,
-  }) : super(decoratedEffect);
-  
-  @override
-  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData) {
-    // Apply blur effect
-    Map<String, dynamic> result = Map<String, dynamic>.from(frameData);
-    
-    // Implementation details for applying blur
-    // ...
-    
-    return result;
-  }
-  
-  @override
-  Map<String, dynamic> decoratorToJson() {
-    return {
-      'type': 'blur',
-      'blurRadius': blurRadius,
-    };
-  }
-}
+// Usage
+IEffect baseEffect = BaseEffect(id: 'base');
+IEffect withBlur = BlurDecorator(baseEffect, intensity: 0.7);
+IEffect withBlurAndColor = ColorDecorator(withBlur, hue: 0.2);
+
+// Process with all effects applied in sequence
+final result = withBlurAndColor.process(originalFrameData);
 ```
 
-### Benefits of Decorators in FlipEdit
+### Effect Chain Management
 
-The decorator pattern provides several advantages for FlipEdit:
-
-1. **Non-destructive editing** - Original content remains unchanged
-2. **Composability** - Effects can be stacked in any order
-3. **Extensibility** - New effects can be added without changing existing code
-4. **Flexibility** - Effects can be added, removed, or reordered at any time
-5. **Performance** - Only the necessary effects are processed
-
-For example, multiple effects can be stacked:
+FlipEdit manages chains of effects using the decorator pattern:
 
 ```dart
-// Start with a base effect
-final baseEffect = BaseEffect(
-  id: '1', 
-  name: 'Base', 
-  type: EffectType.basic,
-  parameters: {},
-  startFrame: 0,
-  durationFrames: 100,
-);
-
-// Apply a filter effect
-final filteredEffect = FilterEffectDecorator(
-  decoratedEffect: baseEffect,
-  intensity: 0.8,
-  colorAdjustments: {'brightness': 0.1, 'contrast': 0.2},
-);
-
-// Then apply a blur effect
-final blurredFilteredEffect = BlurEffectDecorator(
-  decoratedEffect: filteredEffect,
-  blurRadius: 5.0,
-);
-
-// Process a frame - effects are applied in sequence
-final processedFrame = blurredFilteredEffect.process(originalFrame);
-```
-
-## Factory Pattern
-
-The factory pattern centralizes object creation logic, making code more maintainable and encapsulating complex instantiation. FlipEdit uses factories to create clips, effects, and other complex objects.
-
-### Factory Implementation
-
-FlipEdit implements factories for creating complex objects:
-
-```dart
-/// Factory for creating effects
-class EffectFactory {
-  /// Create a base effect with default settings
-  static BaseEffect createBaseEffect({
-    required String id,
-    required String name,
-    required EffectType type,
-    Map<String, dynamic> parameters = const {},
-    int startFrame = 0,
-    int durationFrames = 0,
-  }) {
-    return BaseEffect(
-      id: id,
-      name: name,
-      type: type,
-      parameters: parameters,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-    );
-  }
+class EffectChain {
+  IEffect _rootEffect = BaseEffect(id: 'root');
   
-  /// Create a filter effect
-  static IEffect createFilterEffect({
-    required String id,
-    required String name,
-    int startFrame = 0,
-    int durationFrames = 0,
-    double intensity = 1.0,
-    Map<String, double> colorAdjustments = const {},
-  }) {
-    final baseEffect = createBaseEffect(
-      id: id,
-      name: name,
-      type: EffectType.filter,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-    );
-    
-    return FilterEffectDecorator(
-      decoratedEffect: baseEffect,
-      intensity: intensity,
-      colorAdjustments: colorAdjustments,
-    );
-  }
-  
-  /// Create a blur effect
-  static IEffect createBlurEffect({
-    required String id,
-    required String name,
-    int startFrame = 0,
-    int durationFrames = 0,
-    double blurRadius = 5.0,
-  }) {
-    final baseEffect = createBaseEffect(
-      id: id,
-      name: name,
-      type: EffectType.blur,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-    );
-    
-    return BlurEffectDecorator(
-      decoratedEffect: baseEffect,
-      blurRadius: blurRadius,
-    );
-  }
-  
-  /// Create an effect from a serialized representation
-  static IEffect createFromJson(Map<String, dynamic> json) {
-    // Create the base effect first
-    final baseEffect = BaseEffect(
-      id: json['id'],
-      name: json['name'],
-      type: _parseEffectType(json['type']),
-      parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
-      startFrame: json['startFrame'] ?? 0,
-      durationFrames: json['durationFrames'] ?? 0,
-    );
-    
-    // If there's a decorator, apply it
-    if (json.containsKey('decorator')) {
-      final decorator = json['decorator'];
-      
-      switch (decorator['type']) {
-        case 'filter':
-          return FilterEffectDecorator(
-            decoratedEffect: baseEffect,
-            intensity: decorator['intensity'] ?? 1.0,
-            colorAdjustments: _parseColorAdjustments(decorator['colorAdjustments']),
-          );
-        case 'blur':
-          return BlurEffectDecorator(
-            decoratedEffect: baseEffect,
-            blurRadius: decorator['blurRadius'] ?? 5.0,
-          );
-        default:
-          return baseEffect;
-      }
-    }
-    
-    return baseEffect;
-  }
-  
-  // Helper methods
-  static EffectType _parseEffectType(String typeStr) {
-    // Convert string to enum
-    // ...
-    return EffectType.basic;
-  }
-  
-  static Map<String, double> _parseColorAdjustments(dynamic json) {
-    // Parse color adjustments
-    // ...
-    return {};
-  }
-}
-```
-
-### Clip Factory
-
-Similarly, a factory for clips:
-
-```dart
-/// Factory for creating clips
-class ClipFactory {
-  /// Create a basic video clip
-  static IClip createVideoClip({
-    required String id,
-    required String name,
-    required String filePath,
-    int startFrame = 0,
-    int durationFrames = 0,
-    List<IEffect> effects = const [],
-    Map<String, dynamic> metadata = const {},
-  }) {
-    return VideoClip(
-      id: id,
-      name: name,
-      filePath: filePath,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-      effects: effects,
-      metadata: metadata,
-    );
-  }
-  
-  /// Create a modified speed clip
-  static IClip createSpeedModifiedClip({
-    required IClip baseClip,
-    required double speedFactor,
-  }) {
-    return SpeedModifiedClip(
-      decoratedClip: baseClip,
-      speedFactor: speedFactor,
-    );
-  }
-  
-  /// Create a clip from JSON
-  static IClip createFromJson(Map<String, dynamic> json) {
-    // Implementation for deserialization
-    // ...
-    return VideoClip(...);
-  }
-}
-```
-
-### Benefits of Factories in FlipEdit
-
-Factories provide several advantages:
-
-1. **Centralized Creation Logic** - Creation logic is centralized in one place
-2. **Encapsulation** - Complex instantiation details are hidden
-3. **Consistency** - Objects are created consistently with proper defaults
-4. **Testability** - Factories can be mocked to return test doubles
-5. **Serialization Support** - Factories can handle creating objects from serialized data
-
-## Integration of Patterns
-
-In FlipEdit, these patterns work together to create a cohesive architecture:
-
-### Example: Creating a Complex Effect Chain
-
-```dart
-// Using factories to create decorated effects
-IEffect effectChain = EffectFactory.createBaseEffect(
-  id: 'effect-1',
-  name: 'My Effect Chain',
-  type: EffectType.basic,
-);
-
-// Add a filter using a factory
-effectChain = EffectFactory.createFilterEffect(
-  id: 'effect-2',
-  name: 'Color Filter',
-  intensity: 0.8,
-  colorAdjustments: {'brightness': 0.1},
-  // Use the base effect as the decorated effect
-  baseEffect: effectChain,
-);
-
-// Add a blur using a factory
-effectChain = EffectFactory.createBlurEffect(
-  id: 'effect-3',
-  name: 'Blur Effect',
-  blurRadius: 3.0,
-  // Use the filter effect as the decorated effect
-  baseEffect: effectChain,
-);
-
-// Apply the effect chain to a clip
-IClip clip = ClipFactory.createVideoClip(
-  id: 'clip-1',
-  name: 'My Video Clip',
-  filePath: '/path/to/video.mp4',
-  effects: [effectChain],
-);
-```
-
-### Example: Processing a Frame Through the Pipeline
-
-```dart
-// Get a processed frame from a clip
-Future<Map<String, dynamic>> getProcessedFrame(IClip clip, int framePosition) async {
-  // First get the raw frame
-  Map<String, dynamic> frameData = await loadRawFrame(clip.filePath, framePosition);
-  
-  // Apply each effect in sequence
-  for (final effect in clip.effects) {
-    if (isEffectActiveAtFrame(effect, framePosition)) {
-      frameData = effect.process(frameData);
+  void addEffect(IEffect effect) {
+    if (effect is EffectDecorator) {
+      _rootEffect = effect;
+    } else {
+      throw ArgumentError('Effect must be a decorator');
     }
   }
   
-  return frameData;
-}
-
-bool isEffectActiveAtFrame(IEffect effect, int framePosition) {
-  return effect.startFrame <= framePosition && 
-         effect.startFrame + effect.durationFrames > framePosition;
-}
-```
-
-## VS Code-inspired Approach
-
-This architecture is inspired by VS Code's approach, but adapted for Flutter. Here's how they compare:
-
-### VS Code's Extension Model (TypeScript)
-
-```typescript
-// VS Code extension interface
-export interface IExtension {
-  readonly id: string;
-  activate(context: ExtensionContext): Promise<void>;
-  deactivate?(): void;
-}
-
-// VS Code decorator pattern for commands
-export class CommandDecorator implements Command {
-  constructor(private readonly decoratedCommand: Command) {}
-  
-  get id(): string { return this.decoratedCommand.id; }
-  
-  async execute(...args: any[]): Promise<any> {
-    // Do something before
-    const result = await this.decoratedCommand.execute(...args);
-    // Do something after
-    return result;
-  }
-}
-
-// VS Code factory for creating editors
-export class EditorFactory {
-  static createTextEditor(document: TextDocument): IEditor {
-    return new TextEditor(document);
-  }
-  
-  static createDiffEditor(original: TextDocument, modified: TextDocument): IEditor {
-    return new DiffEditor(original, modified);
+  Map<String, dynamic> process(Map<String, dynamic> frameData) {
+    return _rootEffect.process(frameData);
   }
 }
 ```
 
-### FlipEdit's Flutter Adaptation
+## Factory + Decorator Pattern
+
+FlipEdit combines the Factory and Decorator patterns to create flexible effect chains:
 
 ```dart
-// FlipEdit extension interface
-abstract class IExtension {
+class ClipViewModel {
+  final EffectFactory _effectFactory = di<EffectFactory>();
+  
+  // State
+  final ValueNotifier<IEffect> effectChainNotifier = ValueNotifier<IEffect>(BaseEffect(id: 'root'));
+  
+  void addEffect(String type, Map<String, dynamic> params) {
+    // Create the base effect
+    final newEffect = _effectFactory.createEffect(type, params);
+    
+    // Create a decorator that wraps the current chain
+    final decorator = EffectDecorator(effectChainNotifier.value, newEffect);
+    
+    // Update the chain
+    effectChainNotifier.value = decorator;
+  }
+  
+  Map<String, dynamic> processFrame(Map<String, dynamic> frameData) {
+    return effectChainNotifier.value.process(frameData);
+  }
+}
+```
+
+## Service Registry with Factory Pattern
+
+FlipEdit uses a service registry pattern combined with factories to manage service creation:
+
+```dart
+// Service registry
+void setupServiceLocator() {
+  // Register service factories
+  di.registerLazySingleton<HttpClient>(() => HttpClient());
+  di.registerLazySingleton<ApiService>(() => ApiService(di<HttpClient>()));
+  di.registerLazySingleton<StorageService>(() => StorageService());
+  
+  // Register ViewModel factories
+  di.registerLazySingleton<ProjectViewModel>(() => ProjectViewModel());
+  di.registerLazySingleton<EffectsViewModel>(() => EffectsViewModel());
+  
+  // Register factories
+  di.registerLazySingleton<EffectFactory>(() => EffectFactory());
+  di.registerLazySingleton<ClipFactory>(() => ClipFactory());
+  
+  // Initialize factories
+  setupEffects();
+}
+```
+
+## Interfaces for Plugin Extension
+
+FlipEdit's plugin system leverages interfaces to allow extensions to provide new functionality:
+
+```dart
+// Plugin interface
+abstract class IPlugin {
   String get id;
-  Future<void> activate(ExtensionContext context);
-  Future<void> deactivate();
+  String get name;
+  List<String> get capabilities;
+  
+  void initialize();
+  void dispose();
 }
 
-// FlipEdit decorator pattern for effects
-class EffectDecorator implements IEffect {
-  final IEffect decoratedEffect;
-  
-  EffectDecorator(this.decoratedEffect);
-  
-  // Implementation shown earlier
+// Effect provider interface
+abstract class IEffectProvider {
+  List<EffectDefinition> getEffectDefinitions();
+  IEffect createEffect(String type, Map<String, dynamic> params);
 }
 
-// FlipEdit factory for creating clips
-class ClipFactory {
-  static IClip createVideoClip({...}) {
-    return VideoClip(...);
-  }
-}
-```
-
-The key differences are:
-1. **Language** - TypeScript vs Dart
-2. **UI Framework** - DOM vs Flutter widgets
-3. **Async Model** - Promises vs Futures
-4. **Implementation Details** - Adapted for each platform's strengths
-
-## Applying Patterns in ViewModels
-
-ViewModels in FlipEdit also use these patterns to maintain clean, testable code:
-
-```dart
-class EffectsViewModel extends ChangeNotifier {
-  final List<IEffect> _effects = [];
-  IEffect? _selectedEffect;
+// Plugin implementation
+class MyPlugin implements IPlugin, IEffectProvider {
+  @override
+  String get id => 'com.example.myplugin';
   
-  // Read-only views of the data
-  List<IEffect> get effects => List.unmodifiable(_effects);
-  IEffect? get selectedEffect => _selectedEffect;
+  @override
+  String get name => 'My Plugin';
   
-  // Factory method within ViewModel
-  Future<void> createEffect(EffectType type, {
-    required String name,
-    Map<String, dynamic> parameters = const {},
-  }) async {
-    final effectId = _generateUniqueId();
+  @override
+  List<String> get capabilities => ['effects'];
+  
+  @override
+  void initialize() {
+    // Register with the effect factory
+    final effectFactory = di<EffectFactory>();
+    final effectDefinitions = getEffectDefinitions();
     
-    IEffect newEffect;
-    
-    switch (type) {
-      case EffectType.filter:
-        newEffect = EffectFactory.createFilterEffect(
-          id: effectId,
-          name: name,
-          intensity: parameters['intensity'] ?? 1.0,
-          colorAdjustments: parameters['colorAdjustments'] ?? {},
-        );
-        break;
-      case EffectType.blur:
-        newEffect = EffectFactory.createBlurEffect(
-          id: effectId,
-          name: name,
-          blurRadius: parameters['blurRadius'] ?? 5.0,
-        );
-        break;
-      default:
-        newEffect = EffectFactory.createBaseEffect(
-          id: effectId,
-          name: name,
-          type: type,
-          parameters: parameters,
-        );
+    for (final def in effectDefinitions) {
+      effectFactory.registerEffectType(def.type, def.builder);
     }
-    
-    _effects.add(newEffect);
-    _selectedEffect = newEffect;
-    notifyListeners();
   }
   
-  // Other methods...
+  @override
+  List<EffectDefinition> getEffectDefinitions() {
+    return [
+      EffectDefinition(
+        type: 'my_special_effect',
+        name: 'Special Effect',
+        builder: (params) => SpecialEffect(
+          id: params['id'] ?? generateId(),
+          intensity: params['intensity'] ?? 0.5
+        )
+      )
+    ];
+  }
+  
+  @override
+  IEffect createEffect(String type, Map<String, dynamic> params) {
+    if (type == 'my_special_effect') {
+      return SpecialEffect(
+        id: params['id'] ?? generateId(),
+        intensity: params['intensity'] ?? 0.5
+      );
+    }
+    throw Exception('Unknown effect type: $type');
+  }
+  
+  @override
+  void dispose() {
+    // Cleanup
+  }
 }
 ```
+
+## Conclusion
+
+FlipEdit's architecture makes extensive use of factories, interfaces, and decorators to create a flexible, maintainable, and extensible system. These patterns work together to enable:
+
+1. **Loose coupling** between components
+2. **Dynamic composition** of effects and behaviors
+3. **Plugin extensibility** through well-defined interfaces
+4. **Clean separation** of concerns
+5. **Testability** through clear boundaries and mockable interfaces
+
+By understanding these patterns, you can more effectively contribute to FlipEdit and leverage its architecture for creating new features.
 
 ## Next Steps
 
-- [Decorator Pattern](./decorator-pattern.mdx) - Learn more about the decorator pattern in FlipEdit
-- [Effect Pipeline](./effect-pipeline.mdx) - Understand the effect processing pipeline
 - [MVVM Architecture](./mvvm.mdx) - See how these patterns fit into the overall MVVM architecture
-- [Extension System](./extension-system.mdx) - Learn about FlipEdit's extension system
+- [Effect Pipeline](./effect-pipeline.mdx) - Learn more about how effects are processed
+- [Plugin Development](../extensions/creating.mdx) - Create your own plugins

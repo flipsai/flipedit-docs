@@ -30,6 +30,7 @@
             "pages": [
               "development/get-it-and-watch-it",
               "development/viewmodels",
+              "development/vscode-comparison",
               "development/vscode-vs-flipedit",
               "development/design-patterns-comparison"
             ]

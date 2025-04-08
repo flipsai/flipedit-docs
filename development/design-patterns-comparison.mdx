@@ -1,923 +1,170 @@
 ---
-title: 'Design Patterns: VS Code vs FlipEdit'
-description: 'Comparing pattern implementations between Visual Studio Code and FlipEdit'
+title: 'Design Patterns Comparison'
+description: 'Comparing design patterns used in VS Code and FlipEdit'
 ---
 
-# Design Patterns: VS Code vs FlipEdit
+# Design Patterns Comparison
 
-This guide compares how common design patterns are implemented in Visual Studio Code (TypeScript) and FlipEdit (Flutter/Dart). Understanding these parallels will help you port concepts between these architectures and implement features consistently.
+FlipEdit and Visual Studio Code both use solid architectural design patterns but implement them differently. This guide compares their approaches to help you understand the design decisions in FlipEdit.
 
-## Interface-based Architecture
+## Core Design Patterns
 
-Both VS Code and FlipEdit use interfaces extensively to define contracts between components, though they implement them differently due to language constraints.
+| Pattern | VS Code | FlipEdit |
+|---------|---------|----------|
+| Dependency Management | Dependency Injection | Service locator (watch_it) |
+| Reactivity Pattern | Event emitters | ValueNotifier + watch_it |
+| Command Pattern | Command Registry | ViewModel methods |
+| Composite Pattern | IComposite components | Widget trees |
+| Observer Pattern | Event subscriptions | watch_it property observation |
+| Factory Pattern | Explicit factories | Factory constructors |
 
-### VS Code's Interface Approach (TypeScript)
+## Architecture Implementation Differences
 
-TypeScript's explicit interface declarations:
+### Dependency Management
 
+VS Code uses dependency injection while FlipEdit uses the service locator pattern with watch_it.
+
+**VS Code Example:**
 ```typescript
-// VS Code editor interface
-export interface IEditor {
-  readonly id: string;
-  readonly isReadonly: boolean;
-  
-  // Methods
-  focus(): void;
-  layout(dimension: Dimension): void;
-  getSelection(): Selection;
-  setSelection(selection: Selection): void;
-}
+// Register services
+const instantiationService = new InstantiationService(serviceCollection);
 
-// Concrete implementation
-export class TextEditor implements IEditor {
-  readonly id: string;
-  private _model: ITextModel;
-  
-  constructor(id: string, model: ITextModel) {
-    this.id = id;
-    this._model = model;
-  }
-  
-  get isReadonly(): boolean {
-    return this._model.isReadonly;
-  }
-  
-  focus(): void {
-    // Implementation
-  }
-  
-  layout(dimension: Dimension): void {
-    // Implementation
-  }
-  
-  getSelection(): Selection {
-    // Implementation
-    return new Selection(0, 0, 0, 0);
-  }
-  
-  setSelection(selection: Selection): void {
-    // Implementation
-  }
-}
-```
-
-### FlipEdit's Interface Approach (Dart)
-
-Dart uses abstract classes as interfaces:
-
-```dart
-// FlipEdit editor interface
-abstract class IEditor {
-  String get id;
-  bool get isReadonly;
-  
-  // Methods
-  void focus();
-  void layout(Dimension dimension);
-  Selection getSelection();
-  void setSelection(Selection selection);
-}
-
-// Concrete implementation
-class TextEditor implements IEditor {
-  @override
-  final String id;
-  final TextModel _model;
-  
-  TextEditor(this.id, this._model);
-  
-  @override
-  bool get isReadonly => _model.isReadonly;
-  
-  @override
-  void focus() {
-    // Implementation
-  }
-  
-  @override
-  void layout(Dimension dimension) {
-    // Implementation
-  }
-  
-  @override
-  Selection getSelection() {
-    // Implementation
-    return Selection(0, 0, 0, 0);
-  }
-  
-  @override
-  void setSelection(Selection selection) {
-    // Implementation
-  }
-}
-```
-
-### Key Differences and Similarities
-
-1. **Syntax** - TypeScript uses `interface` keyword while Dart uses `abstract class`
-2. **Implementation** - Both use `implements` keyword for implementation
-3. **Readonly Properties** - TypeScript has `readonly` modifier, Dart uses getters
-4. **Property Overrides** - Dart requires `@override` annotation
-
-## Decorator Pattern
-
-The decorator pattern is heavily used in both VS Code and FlipEdit to add functionality to objects without modifying their original implementations.
-
-### VS Code's Decorator Implementation
-
-```typescript
-// VS Code editor decorator
-export class EditorDecorator implements IEditor {
-  constructor(private readonly decorated: IEditor) {}
-  
-  // Forward properties
-  get id(): string { return this.decorated.id; }
-  get isReadonly(): boolean { return this.decorated.isReadonly; }
-  
-  // Decorate methods
-  focus(): void {
-    console.log(`Focusing editor ${this.id}`);
-    this.decorated.focus();
-  }
-  
-  layout(dimension: Dimension): void {
-    // Maybe do something before/after
-    this.decorated.layout(dimension);
-  }
-  
-  getSelection(): Selection {
-    return this.decorated.getSelection();
-  }
-  
-  setSelection(selection: Selection): void {
-    console.log(`Setting selection in ${this.id}`);
-    this.decorated.setSelection(selection);
-  }
-}
-
-// Example concrete decorator
-export class LoggingEditorDecorator extends EditorDecorator {
-  private readonly _logService: ILogService;
-  
-  constructor(decorated: IEditor, @ILogService logService: ILogService) {
-    super(decorated);
-    this._logService = logService;
-  }
-  
-  focus(): void {
-    this._logService.info(`Editor ${this.id} focused`);
-    super.focus();
-  }
-  
-  setSelection(selection: Selection): void {
-    this._logService.info(`Selection changed in ${this.id}`);
-    super.setSelection(selection);
-  }
-}
-```
-
-### FlipEdit's Decorator Implementation
-
-```dart
-/// FlipEdit effect decorator
-abstract class EffectDecorator implements IEffect {
-  final IEffect decoratedEffect;
-  
-  EffectDecorator(this.decoratedEffect);
-  
-  // Forward properties
-  @override
-  String get id => decoratedEffect.id;
-  
-  @override
-  String get name => decoratedEffect.name;
-  
-  @override
-  EffectType get type => decoratedEffect.type;
-  
-  @override
-  Map<String, dynamic> get parameters => decoratedEffect.parameters;
-  
-  @override
-  int get startFrame => decoratedEffect.startFrame;
-  
-  @override
-  int get durationFrames => decoratedEffect.durationFrames;
-  
-  @override
-  Map<String, dynamic> process(Map<String, dynamic> frameData) {
-    // Apply the wrapped effect first
-    final processedData = decoratedEffect.process(frameData);
-    // Then apply this decorator's effect
-    return applyDecoration(processedData);
-  }
-  
-  @override
-  Map<String, dynamic> toJson() {
-    final json = decoratedEffect.toJson();
-    json['decorator'] = decoratorToJson();
-    return json;
-  }
-  
-  // Abstract methods for concrete decorators to implement
-  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData);
-  Map<String, dynamic> decoratorToJson();
-}
-
-// Example concrete decorator
-class LoggingEffectDecorator extends EffectDecorator {
-  final LogService _logService;
-  
-  LoggingEffectDecorator({
-    required IEffect decoratedEffect,
-    required LogService logService,
-  }) : _logService = logService,
-       super(decoratedEffect);
-  
-  @override
-  Map<String, dynamic> applyDecoration(Map<String, dynamic> frameData) {
-    _logService.info('Processing effect: ${id}');
-    // Just pass through the data, this is a logging decorator
-    return frameData;
-  }
-  
-  @override
-  Map<String, dynamic> decoratorToJson() {
-    return {
-      'type': 'logging',
-    };
-  }
-}
-```
-
-### Key Differences and Similarities
-
-1. **Base Implementation** - Both forward properties and methods to decorated object
-2. **Method Chaining** - Both call the decorated object's methods and add behavior
-3. **Composition** - Both allow stacking multiple decorators
-4. **Property Access** - Dart uses getters while TypeScript uses getter methods
-5. **Dependency Injection** - VS Code uses service injection, FlipEdit passes dependencies
-
-## Factory Pattern
-
-Both VS Code and FlipEdit use factories to centralize and abstract object creation logic.
-
-### VS Code's Factory Implementation
-
-```typescript
-// VS Code editor factory
-export class EditorFactory {
+// Inject dependencies via constructor
+export class EditorService {
   constructor(
-    @IInstantiationService private readonly instantiationService: IInstantiationService,
-    @ITextModelService private readonly textModelService: ITextModelService
-  ) {}
-  
-  createTextEditor(resource: URI, options?: IEditorOptions): IEditor {
-    const model = this.textModelService.createModel(resource);
-    const editor = this.instantiationService.createInstance(
-      TextEditor,
-      generateUuid(),
-      model
-    );
-    
-    if (options?.isReadonly) {
-      return this.instantiationService.createInstance(
-        ReadonlyEditorDecorator,
-        editor
-      );
-    }
-    
-    return editor;
-  }
-  
-  createDiffEditor(original: URI, modified: URI): IEditor {
-    const originalModel = this.textModelService.createModel(original);
-    const modifiedModel = this.textModelService.createModel(modified);
-    
-    return this.instantiationService.createInstance(
-      DiffEditor,
-      generateUuid(),
-      originalModel,
-      modifiedModel
-    );
-  }
-  
-  createEditorFromJSON(json: ISerializedEditor): IEditor {
-    // Deserialize and create appropriate editor type
-    // ...
-  }
-}
-```
-
-### FlipEdit's Factory Implementation
-
-```dart
-/// FlipEdit effect factory
-class EffectFactory {
-  /// Create a base effect with default settings
-  static BaseEffect createBaseEffect({
-    required String id,
-    required String name,
-    required EffectType type,
-    Map<String, dynamic> parameters = const {},
-    int startFrame = 0,
-    int durationFrames = 0,
-  }) {
-    return BaseEffect(
-      id: id,
-      name: name,
-      type: type,
-      parameters: parameters,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-    );
-  }
-  
-  /// Create a filter effect
-  static IEffect createFilterEffect({
-    required String id,
-    required String name,
-    int startFrame = 0,
-    int durationFrames = 0,
-    double intensity = 1.0,
-    Map<String, double> colorAdjustments = const {},
-  }) {
-    final baseEffect = createBaseEffect(
-      id: id,
-      name: name,
-      type: EffectType.filter,
-      startFrame: startFrame,
-      durationFrames: durationFrames,
-    );
-    
-    return FilterEffectDecorator(
-      decoratedEffect: baseEffect,
-      intensity: intensity,
-      colorAdjustments: colorAdjustments,
-    );
-  }
-  
-  /// Create an effect from JSON
-  static IEffect createFromJson(Map<String, dynamic> json) {
-    // Create the base effect first
-    final baseEffect = BaseEffect(
-      id: json['id'],
-      name: json['name'],
-      type: _parseEffectType(json['type']),
-      parameters: Map<String, dynamic>.from(json['parameters'] ?? {}),
-      startFrame: json['startFrame'] ?? 0,
-      durationFrames: json['durationFrames'] ?? 0,
-    );
-    
-    // If there's a decorator, apply it
-    if (json.containsKey('decorator')) {
-      final decorator = json['decorator'];
-      
-      switch (decorator['type']) {
-        case 'filter':
-          return FilterEffectDecorator(
-            decoratedEffect: baseEffect,
-            intensity: decorator['intensity'] ?? 1.0,
-            colorAdjustments: _parseColorAdjustments(decorator['colorAdjustments']),
-          );
-        case 'blur':
-          return BlurEffectDecorator(
-            decoratedEffect: baseEffect,
-            blurRadius: decorator['blurRadius'] ?? 5.0,
-          );
-        default:
-          return baseEffect;
-      }
-    }
-    
-    return baseEffect;
-  }
-  
-  // Helper methods
-  static EffectType _parseEffectType(String typeStr) {
-    // Convert string to enum
-    // ...
-    return EffectType.basic;
-  }
-}
-```
-
-### Key Differences and Similarities
-
-1. **Static vs Instance Methods** - VS Code uses instance methods with dependencies, FlipEdit uses static methods
-2. **Dependency Injection** - VS Code injects services, FlipEdit passes dependencies explicitly
-3. **Method Organization** - Both have methods for creating specific variants and deserializing from JSON
-4. **Parameter Handling** - FlipEdit uses named parameters, VS Code uses optional parameters
-5. **Decorator Integration** - Both integrate decorator pattern with factories
-
-## Command Pattern
-
-Both applications use commands to abstract actions that can be triggered from multiple places.
-
-### VS Code's Command Implementation
-
-```typescript
-// VS Code command interface
-export interface ICommand {
-  readonly id: string;
-  execute(...args: any[]): Promise<any>;
-}
-
-// VS Code command implementation
-export class Command implements ICommand {
-  constructor(
-    readonly id: string,
-    private readonly handler: (...args: any[]) => any,
-    private readonly _description?: string
-  ) {}
-  
-  async execute(...args: any[]): Promise<any> {
-    return this.handler(...args);
-  }
-  
-  get description(): string | undefined {
-    return this._description;
-  }
-}
-
-// VS Code command registry
-export class CommandRegistry {
-  private readonly _commands = new Map<string, ICommand>();
-  
-  registerCommand(command: ICommand): IDisposable {
-    this._commands.set(command.id, command);
-    return toDisposable(() => this._commands.delete(command.id));
-  }
-  
-  executeCommand<T = any>(id: string, ...args: any[]): Promise<T> {
-    const command = this._commands.get(id);
-    if (!command) {
-      return Promise.reject(new Error(`Command '${id}' not found`));
-    }
-    
-    return command.execute(...args);
-  }
-}
-
-// Usage in VS Code
-const commandRegistry = new CommandRegistry();
-commandRegistry.registerCommand(new Command(
-  'editor.formatDocument',
-  (editor) => {
-    // Format the document
-    return editor.format();
-  },
-  'Format the current document'
-));
-
-// Execute command
-commandRegistry.executeCommand('editor.formatDocument', activeEditor);
-```
-
-### FlipEdit's Command Implementation
-
-```dart
-/// FlipEdit command interface
-abstract class ICommand {
-  String get id;
-  Future<dynamic> execute(Map<String, dynamic> args);
-}
-
-/// FlipEdit command implementation
-class Command implements ICommand {
-  @override
-  final String id;
-  final Future<dynamic> Function(Map<String, dynamic>) handler;
-  final String? description;
-  
-  Command({
-    required this.id,
-    required this.handler,
-    this.description,
-  });
-  
-  @override
-  Future<dynamic> execute(Map<String, dynamic> args) async {
-    return await handler(args);
-  }
-}
-
-/// FlipEdit command registry
-class CommandRegistry {
-  final Map<String, ICommand> _commands = {};
-  
-  void registerCommand(ICommand command) {
-    _commands[command.id] = command;
-  }
-  
-  Future<dynamic> executeCommand(String id, [Map<String, dynamic>? args]) async {
-    final command = _commands[id];
-    if (command == null) {
-      throw Exception('Command "$id" not found');
-    }
-    
-    return await command.execute(args ?? {});
-  }
-}
-
-// Usage in FlipEdit
-final commandRegistry = CommandRegistry();
-commandRegistry.registerCommand(Command(
-  id: 'editor.formatDocument',
-  handler: (args) async {
-    final editor = args['editor'] as IEditor;
-    // Format the document
-    return await editor.format();
-  },
-  description: 'Format the current document',
-));
-
-// Execute command
-commandRegistry.executeCommand('editor.formatDocument', {'editor': activeEditor});
-```
-
-### Key Differences and Similarities
-
-1. **Command Interface** - Both define a command interface with id and execute method
-2. **Registry Pattern** - Both use a registry to store and retrieve commands
-3. **Parameters** - VS Code uses rest parameters, FlipEdit uses a Map
-4. **Disposables** - VS Code returns disposables for registration, FlipEdit doesn't
-5. **Async Handling** - Both use async/await or Promise/Future for execution
-
-## Service Locator Pattern
-
-VS Code uses dependency injection while FlipEdit uses the service locator pattern with get_it.
-
-### VS Code's Dependency Injection
-
-```typescript
-// VS Code service interface
-export interface IEditorService {
-  readonly _serviceBrand: undefined;
-  
-  getActiveEditor(): IEditor | null;
-  openEditor(input: IEditorInput): Promise<IEditor>;
-}
-
-// VS Code service implementation
-@Injectable()
-export class EditorService implements IEditorService {
-  readonly _serviceBrand: undefined;
-  
-  constructor(
-    @ILifecycleService private readonly lifecycleService: ILifecycleService,
-    @IWorkspaceService private readonly workspaceService: IWorkspaceService
-  ) {}
-  
-  getActiveEditor(): IEditor | null {
-    // Implementation
-    return null;
-  }
-  
-  async openEditor(input: IEditorInput): Promise<IEditor> {
-    // Implementation
-    return {} as IEditor;
-  }
-}
-
-// VS Code dependency injection usage
-class EditorComponent {
-  constructor(
-    @IEditorService private readonly editorService: IEditorService
-  ) {}
-  
-  openFile(uri: URI): void {
-    this.editorService.openEditor({ uri });
-  }
-}
-```
-
-### FlipEdit's Service Locator
-
-```dart
-/// FlipEdit service interface
-abstract class EditorService {
-  Editor? getActiveEditor();
-  Future<Editor> openEditor(EditorInput input);
-}
-
-/// FlipEdit service implementation
-class EditorServiceImpl implements EditorService {
-  final LifecycleService _lifecycleService;
-  final WorkspaceService _workspaceService;
-  
-  EditorServiceImpl({
-    required LifecycleService lifecycleService,
-    required WorkspaceService workspaceService,
-  })  : _lifecycleService = lifecycleService,
-        _workspaceService = workspaceService;
-  
-  @override
-  Editor? getActiveEditor() {
-    // Implementation
-    return null;
-  }
-  
-  @override
-  Future<Editor> openEditor(EditorInput input) async {
-    // Implementation
-    return Editor();
-  }
-}
-
-// Register services with get_it
-void setupServiceLocator() {
-  // Register services
-  di.registerLazySingleton<LifecycleService>(() => LifecycleServiceImpl());
-  di.registerLazySingleton<WorkspaceService>(() => WorkspaceServiceImpl());
-  
-  // Register implementations with interfaces
-  di.registerLazySingleton<EditorService>(() => EditorServiceImpl(
-    lifecycleService: di<LifecycleService>(),
-    workspaceService: di<WorkspaceService>(),
-  ));
-}
-
-// FlipEdit service locator usage
-class EditorComponent {
-  void openFile(Uri uri) {
-    di<EditorService>().openEditor(EditorInput(uri: uri));
-  }
-}
-```
-
-### Key Differences and Similarities
-
-1. **Registration** - VS Code uses decorators, FlipEdit uses explicit registration
-2. **Resolution** - VS Code injects in constructor, FlipEdit retrieves with `di<T>()`
-3. **Instantiation** - VS Code creates services through DI, FlipEdit when registered
-4. **Scoping** - Both support singleton services that persist throughout the app lifecycle
-5. **Testing** - Both allow mocking services for unit tests
-
-## Event and Reactivity Patterns
-
-VS Code uses events while FlipEdit relies on the reactive state management with `watch_it`.
-
-### VS Code's Event Model
-
-```typescript
-// VS Code event emitter
-export class ClipboardService {
-  private readonly _onDidCopy = new Emitter<string>();
-  readonly onDidCopy = this._onDidCopy.event;
-  
-  private readonly _onDidPaste = new Emitter<void>();
-  readonly onDidPaste = this._onDidPaste.event;
-  
-  copy(text: string): void {
-    // Copy implementation
-    this._onDidCopy.fire(text);
-  }
-  
-  paste(): string {
-    // Paste implementation
-    const text = ''; // Get from clipboard
-    this._onDidPaste.fire();
-    return text;
-  }
-}
-
-// VS Code event subscription
-export class StatusBarClipboardIndicator {
-  private readonly _disposables: IDisposable[] = [];
-  
-  constructor(
-    @IClipboardService private readonly clipboardService: IClipboardService,
-    @IStatusBarService private readonly statusBarService: IStatusBarService
+    @IFileService private readonly fileService: IFileService,
+    @IConfigService private readonly configService: IConfigService
   ) {
-    this._disposables.push(
-      clipboardService.onDidCopy(text => {
-        this.statusBarService.setMessage(`Copied: ${text.substring(0, 10)}...`);
-      }),
-      clipboardService.onDidPaste(() => {
-        this.statusBarService.setMessage('Pasted content');
-      })
-    );
-  }
-  
-  dispose(): void {
-    this._disposables.forEach(d => d.dispose());
+    // Service is initialized with dependencies
   }
 }
 ```
 
-### FlipEdit's Reactive State
-
+**FlipEdit Example:**
 ```dart
-/// FlipEdit clipboard service with ChangeNotifier
-class ClipboardService extends ChangeNotifier {
-  String _lastCopiedText = '';
-  DateTime? _lastPasteTime;
+// Register services with watch_it
+void setupServiceLocator() {
+  di.registerLazySingleton<FileService>(() => FileService());
+  di.registerLazySingleton<ConfigService>(() => ConfigService());
+  di.registerLazySingleton<EditorViewModel>(() => EditorViewModel());
+}
+
+// Access services through the service locator
+class EditorViewModel {
+  final FileService _fileService = di<FileService>();
+  final ConfigService _configService = di<ConfigService>();
   
-  String get lastCopiedText => _lastCopiedText;
-  DateTime? get lastPasteTime => _lastPasteTime;
+  // State as ValueNotifier objects
+  final ValueNotifier<String> selectedPathNotifier = ValueNotifier<String>('');
+}
+```
+
+### Reactivity Pattern
+
+VS Code uses events while FlipEdit relies on the reactive state management with ValueNotifier and watch_it.
+
+**VS Code Example:**
+```typescript
+// Define and fire events
+export class ModelService {
+  private readonly _onDidChangeModel = new Emitter<IModel>();
+  readonly onDidChangeModel = this._onDidChangeModel.event;
   
-  void copy(String text) {
-    // Copy implementation
-    _lastCopiedText = text;
-    notifyListeners();
-  }
+  private _model: IModel;
   
-  String paste() {
-    // Paste implementation
-    final text = ''; // Get from clipboard
-    _lastPasteTime = DateTime.now();
-    notifyListeners();
-    return text;
+  updateModel(newModel: IModel): void {
+    this._model = newModel;
+    this._onDidChangeModel.fire(newModel);
   }
 }
 
-// Register with get_it
-di.registerLazySingleton<ClipboardService>(() => ClipboardService());
+// Subscribe to events
+modelService.onDidChangeModel((model) => {
+  // Handle model change
+  this.render();
+});
+```
+
+**FlipEdit Example:**
+```dart
+// Register with watch_it
+di.registerLazySingleton<ModelViewModel>(() => ModelViewModel());
+
+// ViewModel with ValueNotifier
+class ModelViewModel {
+  final ValueNotifier<Model?> modelNotifier = ValueNotifier<Model?>(null);
+  
+  Model? get model => modelNotifier.value;
+  set model(Model? value) {
+    if (modelNotifier.value == value) return;
+    modelNotifier.value = value;
+  }
+  
+  void updateModel(Model newModel) {
+    model = newModel;
+  }
+}
 
 // FlipEdit reactive component with watch_it
-class StatusBarClipboardIndicator extends StatelessWidget with WatchItMixin {
+class ModelView extends StatelessWidget with WatchItMixin {
   @override
   Widget build(BuildContext context) {
-    final lastCopiedText = watchPropertyValue(
-      (ClipboardService service) => service.lastCopiedText
-    );
+    final model = watchValue((ModelViewModel vm) => vm.modelNotifier);
     
-    final lastPasteTime = watchPropertyValue(
-      (ClipboardService service) => service.lastPasteTime
-    );
-    
-    String message = '';
-    if (lastPasteTime != null && lastPasteTime.isAfter(DateTime.now().subtract(Duration(seconds: 5)))) {
-      message = 'Pasted content';
-    } else if (lastCopiedText.isNotEmpty) {
-      message = 'Copied: ${lastCopiedText.substring(0, min(10, lastCopiedText.length))}...';
-    }
-    
-    return Text(message);
+    // UI automatically updates when model changes
+    return model != null
+      ? ModelEditor(model: model)
+      : Center(child: Text('No model loaded'));
   }
 }
 ```
 
-### Key Differences and Similarities
+## When to Follow Which Pattern
 
-1. **Event Model** - VS Code uses explicit events, FlipEdit uses property changes
-2. **Subscription** - VS Code subscribes to events, FlipEdit watches properties
-3. **Cleanup** - VS Code requires manual disposal, FlipEdit handles automatically
-4. **Granularity** - Both allow fine-grained observation of specific state
-5. **Implementation** - VS Code uses event emitters, FlipEdit uses ChangeNotifier
+When contributing to FlipEdit, you should generally follow FlipEdit's patterns, but there are cases where adopting patterns from VS Code can be beneficial:
 
-## Porting VS Code Features to FlipEdit
+### 1. Use VS Code's Event Pattern When:
 
-When implementing VS Code-like features in FlipEdit, follow these guidelines:
+- You need fine-grained control over event propagation
+- You want to decouple components without direct references
+- You need multiple subscribers to a single event source
 
-### 1. Identify the Pattern
+### 2. Use FlipEdit's MVVM with watch_it Pattern When:
 
-First, identify which design pattern the VS Code feature uses:
-
-- **Command Pattern** - For actions that can be triggered from multiple sources
-- **Decorator Pattern** - For adding behavior to existing components
-- **Factory Pattern** - For complex object creation
-- **Event Pattern** - For communication between components
-
-### 2. Map the Pattern to Flutter/Dart
-
-Translate the pattern to a Flutter/Dart equivalent:
-
-| VS Code Pattern | FlipEdit Equivalent |
-|-----------------|---------------------|
-| Interface | Abstract class |
-| Dependency Injection | Service locator (get_it) |
-| Event emitters | ChangeNotifier + watch_it |
-| Commands | Command interface + registry |
-| Disposables | State disposal in widgets |
+- You want declarative UI updates
+- You need to observe specific properties rather than entire objects
+- You want to minimize boilerplate code
+- You want to leverage Flutter's widget system
 
 ### 3. Follow FlipEdit's MVVM Architecture
 
 Ensure your implementation follows FlipEdit's MVVM architecture:
 
-- **Models** - Domain entities, use interfaces and factories
-- **ViewModels** - Business logic, use ChangeNotifier
-- **Views** - UI components, use WatchItMixin
+- **Models**: Data and business logic
+- **ViewModels**: UI state and operations exposed as ValueNotifier objects
+- **Views**: UI components that observe ViewModels using watchValue
 
-### 4. Example: Implementing Clipboard History
+## Working With Both Patterns
 
-VS Code Implementation:
+Sometimes you'll need to adapt VS Code patterns to work within FlipEdit's architecture. Here's how:
 
-```typescript
-// VS Code clipboard history
-export class ClipboardHistoryService {
-  private readonly _history: string[] = [];
-  private readonly _onDidChangeHistory = new Emitter<void>();
-  readonly onDidChangeHistory = this._onDidChangeHistory.event;
-  
-  addToHistory(text: string): void {
-    this._history.unshift(text);
-    if (this._history.length > 10) {
-      this._history.pop();
-    }
-    this._onDidChangeHistory.fire();
-  }
-  
-  getHistory(): string[] {
-    return [...this._history];
-  }
-}
+1. **Converting VS Code services** to FlipEdit services and ViewModels:
+   - Business logic goes in Services
+   - UI state and operations go in ViewModels as ValueNotifier properties
 
-// VS Code clipboard history UI
-export class ClipboardHistoryView extends Disposable {
-  constructor(
-    @IClipboardHistoryService private readonly clipboardHistory: IClipboardHistoryService
-  ) {
-    super();
-    this._register(clipboardHistory.onDidChangeHistory(() => {
-      this.render();
-    }));
-    this.render();
-  }
-  
-  private render(): void {
-    const history = this.clipboardHistory.getHistory();
-    // Render UI
-  }
-}
-```
+2. **Converting event emitters** to ValueNotifier:
+   - Replace `_onDidChange.fire()` with updating ValueNotifier properties
+   - Replace event subscriptions with `watchValue` in UI components
 
-FlipEdit Implementation:
+3. **Converting commands** to ViewModel methods:
+   - Replace command registration with methods on ViewModels
+   - Call ViewModel methods directly from UI components
 
-```dart
-// FlipEdit clipboard history model
-class ClipboardHistoryEntry {
-  final String text;
-  final DateTime timestamp;
-  
-  ClipboardHistoryEntry({
-    required this.text,
-    required this.timestamp,
-  });
-}
+## Learning More
 
-// FlipEdit clipboard history service
-class ClipboardHistoryService extends ChangeNotifier {
-  final List<ClipboardHistoryEntry> _history = [];
-  
-  List<ClipboardHistoryEntry> get history => List.unmodifiable(_history);
-  
-  void addToHistory(String text) {
-    _history.insert(0, ClipboardHistoryEntry(
-      text: text,
-      timestamp: DateTime.now(),
-    ));
-    
-    if (_history.length > 10) {
-      _history.removeLast();
-    }
-    
-    notifyListeners();
-  }
-}
+For more detailed comparisons and implementation guides:
 
-// FlipEdit clipboard history UI
-class ClipboardHistoryView extends StatelessWidget with WatchItMixin {
-  @override
-  Widget build(BuildContext context) {
-    final history = watchPropertyValue(
-      (ClipboardHistoryService service) => service.history
-    );
-    
-    return ListView.builder(
-      itemCount: history.length,
-      itemBuilder: (context, index) {
-        final entry = history[index];
-        return ListTile(
-          title: Text(entry.text),
-          subtitle: Text(entry.timestamp.toString()),
-          onTap: () {
-            di<ClipboardService>().copy(entry.text);
-          },
-        );
-      },
-    );
-  }
-}
-```
-
-## Conclusion
-
-While VS Code (TypeScript) and FlipEdit (Flutter/Dart) use different technologies, they share many architectural patterns. Understanding these parallels makes it easier to implement familiar VS Code features in FlipEdit:
-
-1. **Interfaces define contracts** - Both use interfaces to define component contracts
-2. **Decorators add behavior** - Both use decorators to enhance objects without modifying them
-3. **Factories create objects** - Both use factories to centralize complex object creation
-4. **Commands abstract actions** - Both use commands to encapsulate actions
-5. **Services provide functionality** - Both use services for shared functionality
-6. **Events/reactivity for updates** - Both have mechanisms for responding to state changes
-
-By applying these patterns consistently, you can create a cohesive architecture that is familiar to developers with experience in either ecosystem.
-
-## Next Steps
-
-- [Factories, Interfaces, and Decorators](../architecture/factories-interfaces-decorators.mdx) - Deeper dive into these patterns in FlipEdit
-- [VS Code vs FlipEdit Architecture](./vscode-vs-flipedit.mdx) - Broader architectural comparison
+- [VS Code vs FlipEdit Architecture](./vscode-comparison.mdx) - Detailed architectural comparison
 - [MVVM Architecture](../architecture/mvvm.mdx) - Learn about FlipEdit's overall architecture
-- [State Management with get_it and watch_it](./get-it-and-watch-it.mdx) - Detailed look at FlipEdit's state management
+- [State Management](../architecture/state-management.mdx) - FlipEdit's approach to state management
+- [Using watch_it in FlipEdit](./get-it-and-watch-it.mdx) - Detailed implementation guide
