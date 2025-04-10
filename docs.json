@@ -51,6 +51,7 @@
               "essentials/settings",
               "essentials/navigation",
               "essentials/tabs-and-panels",
+              "essentials/docking-concepts",
               "essentials/reusable-snippets"
             ]
           }

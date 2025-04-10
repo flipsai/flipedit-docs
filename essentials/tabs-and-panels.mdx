@@ -1,76 +1,97 @@
 ---
 title: 'Tabs and Panels'
-description: 'Understanding how tabs and panels are managed in the FlipEdit interface'
+description: 'Understanding how tabs and panels are managed in the FlipEdit interface using the docking library'
 icon: 'window-maximize'
 ---
 
 # Tabs and Panels Management
 
-FlipEdit uses the docking package to manage tabs and panels in the editor interface. This document explains how the interface components are organized, how tabs are stored, opened, closed, and persisted within the application.
+FlipEdit uses the `docking` package to manage tabs and panels (referred to as `DockingItem`s within the library) in the editor interface. This document explains how the interface components are organized, how panels are stored, opened, closed, and how their layout is managed.
 
 ## Overview
 
-The FlipEdit interface is organized into panels that can be arranged in various layouts. The main panels include:
+The FlipEdit interface is built around rearrangeable panels. The core panels include:
 
-- **Preview Panel**: For viewing content
-- **Timeline Panel**: For editing time-based media
-- **Inspector Panel**: For adjusting properties and settings
+- **Preview Panel**: (`id: 'preview'`) For viewing content.
+- **Timeline Panel**: (`id: 'timeline'`) For editing time-based media.
+- **Inspector Panel**: (`id: 'inspector'`) For adjusting properties and settings.
 
-These panels can be toggled on or off, resized, and rearranged according to user preference.
+These panels can be toggled on or off via the menu, resized, and rearranged by dragging them within the layout.
 
 ## Architecture
 
-### Storage of Opened Tabs
+### Layout State Management (`EditorViewModel`)
 
-The `EditorViewModel` class is responsible for maintaining the state of the editor layout, including which panels are visible. The key components of this system include:
+The `EditorViewModel` class is central to managing the editor's layout state.
 
-#### Panel Visibility State
+#### `DockingLayout` State
 
-```dart
-// State flags for panel visibility
-final ValueNotifier<bool> isTimelineVisibleNotifier = ValueNotifier<bool>(true);
-final ValueNotifier<bool> isInspectorVisibleNotifier = ValueNotifier<bool>(true);
-```
-
-#### Layout Structure
+Instead of individual visibility flags, the primary state holder is the `DockingLayout` object itself, wrapped in a `ValueNotifier`:
 
 ```dart
+// Holds the current layout structure provided by the docking package.
 final ValueNotifier<DockingLayout?> layoutNotifier = ValueNotifier<DockingLayout?>(null);
-```
 
-#### Layout Structure Key
-
-The `layoutStructureKey` property represents the current configuration of visible panels as a string:
-
-```dart
-String get layoutStructureKey {
-  // Generate a simple string based on visible panels
-  final parts = ['preview']; // Preview is always there
-  if (isTimelineVisible) parts.add('timeline');
-  if (isInspectorVisible) parts.add('inspector');
-  return parts.join('_');
+// Getter and Setter for the layout
+DockingLayout? get layout => layoutNotifier.value;
+set layout(DockingLayout? value) {
+  // ... (Handles listener attachment/detachment)
+  layoutNotifier.value = value;
+  // ... (Updates compatibility flags)
 }
 ```
 
-This key (e.g., "preview_timeline_inspector") is used to identify different layout configurations.
+When `layoutNotifier.value` changes, UI components watching it (using `watch_it`) will rebuild.
+
+#### Compatibility Visibility Flags
+
+For compatibility with UI elements like menu checks, derived visibility notifiers are maintained. Their state is updated based on whether the corresponding `DockingItem` exists in the current `layout`:
+
+```dart
+// Kept for menu item state synchronization.
+final ValueNotifier<bool> isTimelineVisibleNotifier = ValueNotifier<bool>(true);
+final ValueNotifier<bool> isInspectorVisibleNotifier = ValueNotifier<bool>(true);
+
+// Getters derive state from the actual layout
+bool get isTimelineVisible => layoutNotifier.value?.findDockingItem('timeline') != null;
+bool get isInspectorVisible => layoutNotifier.value?.findDockingItem('inspector') != null;
+```
+
+#### Storing Last Known Positions
+
+To restore panels to their previous locations when toggled back on, their last known position relative to a sibling panel is stored:
+
+```dart
+// Stores {'adjacentId': String, 'position': DropPosition} for 'timeline' and 'inspector'
+Map<String, Map<String, dynamic>> _lastPanelPositions = {};
+
+// Called before removing an item to capture its context.
+void _storePanelPositions() {
+  // ... (Traverses the layout tree using visitArea)
+}
+
+void processItem(DockingItem item, DockingArea parent, DropPosition position) {
+  // ... (Calculates adjacentId and position relative to siblings in the parent)
+  _lastPanelPositions[item.id] = { ... };
+}
+```
 
 ## Panel Management
 
-### Opening Tabs
+### Initial Layout
 
-Tabs are opened through the following mechanisms:
-
-#### Initial Layout
-
-When the editor is first loaded, the `initializePanelLayout()` method is called to set up the default layout:
+On startup, `_loadAndBuildInitialLayout` is called:
+1.  It attempts to load a minimal persisted state (`_layoutService.loadVisibilityState`).
+2.  It builds a default layout using `_buildDefaultLayout()`.
+3.  It applies the loaded visibility state by potentially removing items from the default layout using `currentLayout.removeItemByIds(...)`.
 
 ```dart
-void initializePanelLayout() {
-  final previewItem = DockingItem(id: 'preview', name: 'Preview', ...);
-  final timelineItem = DockingItem(id: 'timeline', name: 'Timeline', ...);
-  final inspectorItem = DockingItem(id: 'inspector', name: 'Inspector', ...);
-  
-  layout = DockingLayout(
+DockingLayout _buildDefaultLayout() {
+  final previewItem = _buildPreviewItem();
+  final timelineItem = _buildTimelineItem();
+  final inspectorItem = _buildInspectorItem();
+
+  return DockingLayout(
     root: DockingRow([
       DockingColumn([previewItem, timelineItem]),
       inspectorItem
@@ -79,25 +100,44 @@ void initializePanelLayout() {
 }
 ```
 
-#### Toggling Panels
+### Toggling Panels (Menu Actions)
 
-Panels can be toggled on and off using the toggle methods:
+Panels are toggled using methods like `toggleTimeline()` and `toggleInspector()`. These methods directly manipulate the `DockingLayout` object:
 
 ```dart
 void toggleTimeline() {
-  isTimelineVisible = !isTimelineVisible;
-}
+  final currentLayout = layoutNotifier.value;
+  // ... (null check)
+  final isCurrentlyVisible = isTimelineVisible; // Uses getter derived from layout
 
-void toggleInspector() {
-  isInspectorVisible = !isInspectorVisible;
+  if (isCurrentlyVisible) {
+    // 1. Store position BEFORE removing
+    _storePanelPositions();
+    // 2. Remove item from layout
+    currentLayout.removeItemByIds(['timeline']);
+  } else {
+    // 1. Check if layout became empty
+    if (isLayoutEmpty) {
+      // Reset layout with this item as root
+      this.layout = DockingLayout(root: _buildTimelineItem());
+    } else {
+      // 2. Try restoring to _lastPanelPositions relative to adjacentId
+      //    using currentLayout.addItemOn(...)
+      // 3. If restore fails (no last position or adjacent item not found),
+      //    use _addTimelineDefaultPosition() to add relative to 'preview' or 'inspector'.
+    }
+  }
+  // Update compatibility flag
+  isTimelineVisibleNotifier.value = !isCurrentlyVisible;
 }
 ```
 
-These methods are typically called from the application menu:
+The menu items trigger these methods:
 
 ```dart
 PlatformMenuItem(
-  label: isTimelineVisible ? '✓ Timeline' : '  Timeline',
+  // Label uses the compatibility notifier for checkmark state
+  label: watchPropertyValue((EditorViewModel vm) => vm.isTimelineVisibleNotifier) ? '✓ Timeline' : '  Timeline',
   shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true),
   onSelected: () {
     di<EditorViewModel>().toggleTimeline();
@@ -105,124 +145,121 @@ PlatformMenuItem(
 )
 ```
 
-### Closing Tabs
+### Closing Panels (Panel 'X' Button)
 
-Tabs can be closed in two ways:
-
-#### User-Initiated Close
-
-When a user closes a tab using the UI, the `onItemClose` callback is triggered:
+When a user clicks the close button ('X') on a panel itself, the `docking` library triggers callbacks configured in the `Docking` widget:
 
 ```dart
+// In the View layer (e.g., EditorPage build method)
 Docking(
-  layout: layout,
-  onItemClose: _handlePanelClosed,
+  layout: layout, // The layout from EditorViewModel
+  // ... other parameters
+  itemCloseInterceptor: (item) {
+    // Optional: Can prevent closing specific items
+    return true; // Allow closing
+  },
+  onItemClose: (item) {
+    // Notify the ViewModel that the close button was used
+    if (item.id == 'inspector') {
+      di<EditorViewModel>().markInspectorClosed();
+    } else if (item.id == 'timeline') {
+      di<EditorViewModel>().markTimelineClosed();
+    }
+  }
 )
 ```
 
-This calls the handler method:
-
-```dart
-void _handlePanelClosed(DockingItem item) {
-  if (item.id == 'inspector') {
-    di<EditorViewModel>().markInspectorClosed();
-  } else if (item.id == 'timeline') {
-    di<EditorViewModel>().markTimelineClosed();
-  }
-}
-```
-
-#### Programmatic Close
-
-Panels can be closed programmatically by setting their visibility flag to false:
+The `mark...Closed()` methods in the `EditorViewModel` primarily handle storing the position *before* the library actually removes the item:
 
 ```dart
 void markInspectorClosed() {
-  if (isInspectorVisible) {
-    isInspectorVisible = false;
+  // Store position *before* the item is removed by the library
+  _storePanelPositions();
+
+  // Update compatibility flag (listener will update based on layout change)
+  isInspectorVisibleNotifier.value = false;
+  _saveLayoutState(); // Explicitly save visibility state
+}
+```
+
+### Layout Updates
+
+Layout updates are now largely handled *internally* by the `docking` library when methods like `removeItemByIds` or `addItemOn` are called. The `EditorViewModel` listens for changes to the layout object itself to perform necessary actions:
+
+```dart
+set layout(DockingLayout? value) {
+  // ... (Remove listener from old layout)
+  layoutNotifier.value = value;
+  if (layoutNotifier.value != null) {
+    // Add listener to new layout
+    _layoutListener = _onLayoutChanged;
+    layoutNotifier.value!.addListener(_layoutListener!);
   }
+  // ... (Update compatibility flags)
 }
 
-void markTimelineClosed() {
-  if (isTimelineVisible) {
-    isTimelineVisible = false;
+void _onLayoutChanged() {
+  // Called when the docking layout changes internally (drag, resize, close completion)
+  if (_isInitialLoad) return;
+
+  // Save minimal state (like visibility)
+  _saveLayoutState();
+
+  // Update compatibility flags based on the final state
+  final currentLayout = layoutNotifier.value;
+  if (currentLayout != null) {
+    isTimelineVisibleNotifier.value = currentLayout.findDockingItem('timeline') != null;
+    isInspectorVisibleNotifier.value = currentLayout.findDockingItem('inspector') != null;
   }
 }
 ```
 
-## Layout Updates
+**Note**: The previous approach of manually rebuilding the entire layout (`_updateLayout`, `_buildLayout`) based on boolean flags is no longer used. The `DockingLayout` object itself is the source of truth for the structure.
 
-When panel visibility changes, the layout is automatically updated through the `_updateLayout()` method:
+## Layout Persistence
+
+Currently, only the *visibility* state (whether Timeline and Inspector were open or closed) is persisted using `LayoutService`:
 
 ```dart
-set isTimelineVisible(bool value) {
-  if (isTimelineVisibleNotifier.value == value) return;
-  isTimelineVisibleNotifier.value = value;
-  _updateLayout();
+Future<void> _saveLayoutState() async {
+  // ... (check _isInitialLoad)
+  final visibilityState = {
+    'isTimelineVisible': isTimelineVisible,
+    'isInspectorVisible': isInspectorVisible,
+  };
+  await _layoutService.saveVisibilityState(visibilityState);
 }
-```
 
-The `_updateLayout()` method calls `_buildLayout()`, which reconstructs the entire layout based on the current visibility settings:
-
-```dart
-void _buildLayout() {
-  final items = <DockingItem>[];
-  
-  // Always add the preview
-  items.add(_buildPreviewItem());
-  
-  // Add timeline if visible
-  if (isTimelineVisible) {
-    items.add(_buildTimelineItem());
+Future<void> _loadAndBuildInitialLayout() async {
+  // ...
+  final visibilityState = await _layoutService.loadVisibilityState();
+  layout = _buildDefaultLayout();
+  if (visibilityState != null) {
+    // Apply visibility by removing items if needed
+    if (!visibilityState['isTimelineVisible']) layout?.removeItemByIds(['timeline']);
+    if (!visibilityState['isInspectorVisible']) layout?.removeItemByIds(['inspector']);
   }
-  
-  // Add inspector if visible
-  if (isInspectorVisible) {
-    items.add(_buildInspectorItem());
-  }
-  
-  // Create a layout with the items based on how many are visible
   // ...
 }
 ```
 
-## Integration with State Management
-
-The application uses the `watch_it` package for reactive state management. This allows UI components to automatically update when the tab state changes:
-
-```dart
-final selectedExtension = watchValue((EditorViewModel vm) => vm.selectedExtensionNotifier);
-final layout = watchValue((EditorViewModel vm) => vm.layoutNotifier);
-```
-
-## Current Limitations and Future Improvements
-
-Currently, the tab state is not explicitly persisted between application sessions. To implement persistence, the following would be needed:
-
-1. Save the layout state when the application closes or when changes are made
-2. Restore the layout state when the application starts
-
-This could be implemented by:
-
-- Adding methods to serialize the layout state to JSON
-- Storing this JSON in local storage (e.g., using the `shared_preferences` package)
-- Loading and applying the saved state on application startup
+**Limitations**: The actual positions, sizes, and arrangement (e.g., if the user docked Timeline next to Inspector) are **not** saved or restored. Only whether they were open or closed is remembered.
 
 ## Recommendations for Enhancement
 
-1. **Persistence**: Add state persistence to remember the user's preferred layout between sessions
-2. **Custom Layouts**: Allow users to save and load custom layouts
-3. **Drag and Drop**: Enhance the docking system to allow more flexible rearrangement of panels
-4. **Panel State**: Store additional state for each panel (e.g., scroll position, selected items)
+1.  **Full Layout Persistence**: Implement saving and loading of the complete `DockingLayout` structure. The `docking` library provides `layout.stringify()` and `layout.load()` methods, potentially requiring custom parsers/builders (see `_basicParser`/`_areaBuilder` in `EditorViewModel` for a non-functional example).
+2.  **Custom Layouts**: Allow users to save named layout configurations.
+3.  **Panel State**: Persist internal state specific to each panel (e.g., scroll position).
 
 ## Adding New Panel Types
 
-To add a new tab type to the system:
+1.  **Create Widget**: Build the Flutter widget for the new panel.
+2.  **Define ID**: Assign a unique string ID (e.g., `'assetsPanel'`).
+3.  **Builder Method**: Add a builder method in `EditorViewModel` (e.g., `_buildAssetsPanelItem()`) that returns a `DockingItem` with the ID and widget.
+4.  **Toggle Method**: Create a `toggleAssetsPanel()` method in `EditorViewModel` following the pattern of `toggleTimeline` (handle visibility, empty layout check, store/restore position, add default position).
+5.  **Default Position Helper**: Add `_addAssetsPanelDefaultPosition()`.
+6.  **Store Position**: Update `_storePanelPositions` to handle the new panel ID if its position needs saving/restoring.
+7.  **Visibility State**: Add a corresponding `isAssetsPanelVisibleNotifier` and update `_onLayoutChanged` and `_saveLayoutState`/`_loadAndBuildInitialLayout` if its visibility needs persistence.
+8.  **Menu Item**: Add a menu item in the UI to call the toggle method.
 
-1. Create a new panel widget
-2. Add a visibility flag in `EditorViewModel`
-3. Create a builder method in `EditorViewModel` (e.g., `_buildNewPanelItem()`)
-4. Update the `_buildLayout()` method to include the new panel
-5. Add toggle methods and UI controls for the new panel
-
-This approach ensures that new panels integrate seamlessly with the existing tab management system.
+This ensures new panels integrate with the dynamic layout management, visibility tracking, and position restoration system. 

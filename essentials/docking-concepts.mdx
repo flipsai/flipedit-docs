@@ -1,0 +1,88 @@
+---
+title: 'Docking Library Concepts'
+description: 'Core concepts of the docking library: layout structure, parents, and panel operations'
+icon: 'diagram-predecessor'
+---
+
+# Understanding the Docking Layout
+
+This document explains the core concepts of the `docking` library used in this project, focusing on layout structure, items, parents, and how moving/closing panels affects the layout.
+
+## Core Components
+
+The layout is built from different types of **Docking Areas**:
+
+1.  **`DockingItem`**:
+    *   The fundamental unit that holds your actual content widget (like the Preview panel, Timeline, or Inspector).
+    *   Has properties like `id`, `name`, `widget`, `closable`, `maximizable`.
+    *   Think of it as the "window" or "panel" itself.
+
+2.  **`DockingRow`**:
+    *   A container that arranges its child `DockingArea`s horizontally.
+    *   Children can be `DockingItem`s or other containers (`DockingColumn`, `DockingTabs`, even nested `DockingRow`s).
+    *   Creates draggable dividers between its children.
+
+3.  **`DockingColumn`**:
+    *   A container that arranges its child `DockingArea`s vertically.
+    *   Children can be `DockingItem`s or other containers (`DockingRow`, `DockingTabs`, even nested `DockingColumn`s).
+    *   Creates draggable dividers between its children.
+
+4.  **`DockingTabs`**:
+    *   A container that displays its child `DockingItem`s as selectable tabs.
+    *   Only one child `DockingItem`'s content is visible at a time.
+    *   Children *must* be `DockingItem`s.
+
+## Layout Structure: Root and Parents
+
+*   **`DockingLayout`**: The main object that manages the entire layout structure.
+*   **`root`**: Every `DockingLayout` has a single `root` `DockingArea`. This is the top-level container. It can be a `DockingRow`, `DockingColumn`, `DockingTabs`, or even a single `DockingItem`.
+*   **Tree Structure**: The layout is essentially a tree. The `root` is the base of the tree. Containers (`DockingRow`, `DockingColumn`, `DockingTabs`) act as branches (parent nodes), and `DockingItem`s or nested containers are the leaves or further branches (child nodes).
+*   **Parent**: Every `DockingArea` except the `root` has a **parent** container. This parent is the `DockingRow`, `DockingColumn`, or `DockingTabs` that directly contains it. This relationship is crucial for operations like finding siblings or determining relative positions.
+
+**Example:**
+
+```
+DockingLayout(
+  root: DockingRow([               // Root is a Row (Parent A)
+    DockingColumn([             // Child 1 of Row A is a Column (Parent B)
+      DockingItem(id: 'preview'), // Child 1 of Column B
+      DockingItem(id: 'timeline') // Child 2 of Column B
+    ]),
+    DockingItem(id: 'inspector')  // Child 2 of Row A
+  ])
+)
+```
+
+In this example:
+*   The `DockingRow` is the `root`.
+*   The `DockingColumn`'s parent is the `DockingRow`.
+*   The 'preview' `DockingItem`'s parent is the `DockingColumn`.
+*   The 'timeline' `DockingItem`'s parent is the `DockingColumn`.
+*   The 'inspector' `DockingItem`'s parent is the `DockingRow`.
+
+## What Happens When You Move a Tab (`DockingItem`)?
+
+Moving a tab involves dragging it to a different location. The library intercepts this drag-and-drop and modifies the layout tree structure:
+
+1.  **Detachment**: The moved `DockingItem` is removed from its current parent container.
+2.  **Re-attachment/Restructuring**: Depending on where you drop it:
+    *   **Onto another `DockingItem` (center)**: A new `DockingTabs` container is often created, containing both the target item and the moved item. This new `DockingTabs` replaces the target item in its original parent.
+    *   **Onto another `DockingItem` (edges - top, bottom, left, right)**: A new container (`DockingRow` or `DockingColumn`) might be created to hold the target item and the moved item side-by-side (or top-and-bottom). This new container replaces the target item in its original parent.
+    *   **Onto the edge of an existing `DockingRow` or `DockingColumn`**: The item is inserted into that container at the appropriate position.
+    *   **Onto the edge of the whole layout**: The item might be added to the `root` container, potentially changing the `root`'s type (e.g., if the root was a single item, it might become a Row/Column containing the original root and the moved item).
+
+Essentially, the tree structure is dynamically rebuilt to reflect the new visual arrangement. Parents change, and new container nodes (`DockingRow`, `DockingColumn`, `DockingTabs`) might be inserted or removed.
+
+## What Happens When You Close a Tab (`DockingItem`)?
+
+Closing a tab (either via its 'X' button or a menu toggle that calls `removeItemByIds`) removes the `DockingItem` from the layout tree:
+
+1.  **Find Item**: The library locates the `DockingItem` to be closed using its ID.
+2.  **Remove from Parent**: The item is removed from its parent container's list of children.
+3.  **Parent Simplification (Potential)**: This is a critical part. If removing the item leaves its parent container in a state that can be simplified, the library might automatically restructure the tree:
+    *   If a `DockingRow` or `DockingColumn` is left with only **one** child after removal, the library often removes the container itself and promotes the single remaining child up to take its place in the grandparent container.
+    *   If a `DockingTabs` is left with only **one** child, it might be replaced by that single `DockingItem`.
+    *   If a `DockingRow`, `DockingColumn`, or `DockingTabs` is left with **zero** children, it is removed entirely from its parent.
+4.  **Empty Layout**: If closing an item results in the `root` container becoming empty (or being removed due to simplification), the `DockingLayout` might end up with `root = null` or an invalid state. This is why reopening the first tab after closing the last one requires special handling (like resetting the layout).
+
+**Potential Issue (`ArgumentError: Insufficient number of children`)**: This error likely arises during step 3 (Parent Simplification). If the library attempts an operation (like accessing children of a `DockingRow`/`Column`) *during* the restructuring process when a container temporarily violates an internal constraint (e.g., having fewer than the expected minimum number of children before the simplification completes), this error can occur. This seems more likely if other operations (like storing panel positions) are happening concurrently with the library's internal closing/restructuring logic. 
