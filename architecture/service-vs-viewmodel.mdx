@@ -1,0 +1,55 @@
+# Service vs. ViewModel: Roles and Responsibilities in MVVM
+
+Think of them as layers with distinct jobs:
+
+**1. Service (`ProjectService`, `AuthService`, `ApiService`, etc.)**
+
+*   **Purpose:** Handles **core application logic, data access, and business rules**. Services are the workhorses that manage the application's *state* and interact with external resources (databases, APIs, hardware).
+*   **Scope:** Application-wide or feature-specific core functionality. They should be **UI-agnostic** – a Service shouldn't know or care about specific Flutter widgets or UI layouts.
+*   **Responsibilities:**
+    *   **Data Fetching/Persistence:** Interacting with databases (`drift` DAOs like `ProjectDao`), network APIs, or local storage.
+    *   **Business Logic:** Performing calculations, validations (that are core business rules, not just UI input validation), data processing, and orchestrating complex operations.
+    *   **State Management (Core):** Holding and updating the central source of truth for application data (e.g., `ProjectService.currentProjectNotifier` holding the *actual* loaded project).
+    *   **Interacting with Other Services:** Coordinating actions between different parts of the application's core logic.
+    *   **Handling System Events:** Interacting with platform channels, background tasks, etc.
+
+*   **When to Use a Service:**
+    *   When you need to fetch, save, update, or delete data from a database (`drift`) or API.
+    *   When you need to implement complex business rules or algorithms.
+    *   When you need to manage shared application state that multiple parts of the UI might need access to (e.g., the currently logged-in user, the active project).
+    *   When you need to interact with system resources (like setting the window title via `windowManager` as seen in your `ProjectService`).
+    *   When the logic needs to be reusable across different UI screens or even potentially outside the UI (e.g., in background processes).
+
+*   **Example (`ProjectService`):**
+    *   `loadProject(int projectId)`: Fetches from `ProjectDao`, updates `currentProjectNotifier`, interacts with `TrackDao`, updates `windowManager`. This is complex orchestration and data access, perfect for a Service.
+    *   `createNewProject({required String name})`: Interacts with `ProjectDao` to insert data into the database.
+    *   `watchAllProjects()`: Provides a stream of data directly from the `ProjectDao`.
+
+**2. ViewModel (`TimelineViewModel`, `ProjectViewModel`, `SettingsViewModel`, etc.)**
+
+*   **Purpose:** Acts as a **mediator between the View (UI Widgets) and the Model (represented by Services and data models)**. It prepares data for display and handles UI-specific logic and state.
+*   **Scope:** Typically tied to a specific View (a screen, a complex widget, or a group of related widgets). It **knows about the View's needs** but not the specific widget implementation.
+*   **Responsibilities:**
+    *   **Exposing Data for the View:** Takes raw data from Services and formats or transforms it as needed for display (e.g., formatting dates, combining data from multiple sources into a display-specific object). It often exposes this data via `ValueNotifier`, `Stream`, or other state management primitives (`watch_it` helps manage this).
+    *   **Handling UI Actions/Commands:** Exposes methods (commands) that the View can call in response to user interactions (button presses, form submissions). These methods typically delegate the *real* work to Services.
+    *   **Managing UI State:** Holds state that is specific to the UI, such as loading indicators (`isLoading`), selection state (`selectedItem`), error messages for forms, temporary user input.
+    *   **UI Logic/Validation:** Performing simple validation on user input before sending it to a Service (e.g., checking if a required text field is empty).
+
+*   **When to Use a ViewModel:**
+    *   When you need to provide data specifically formatted or filtered for a particular UI screen or widget.
+    *   When you need to react to user input (button clicks, text changes) and trigger actions (which often involve calling a Service).
+    *   When you need to manage temporary state related to the UI (e.g., "is this dialog busy?", "which item in this list is selected?").
+    *   When you need to abstract the UI away from the underlying data sources and business logic provided by Services.
+
+*   **Example (How `ProjectViewModel` *should* ideally work):**
+    *   `createNewProject(String name)`: Takes `name` from a UI text field, potentially shows a loading indicator (`isLoading = true`), calls `_projectService.createNewProject(name: name)`, handles success/error (e.g., updates an error message `errorMessage = 'Failed'`, or navigates), sets `isLoading = false`.
+    *   `loadRecentProjects()`: Calls `_projectService.watchAllProjects()`, transforms the stream if needed, and exposes it for a recent projects list in the UI.
+    *   Holds a `ValueNotifier<bool> isLoading` for showing spinners during operations.
+    *   Watches `projectService.currentProjectNotifier` to know when the active project changes and potentially update its own state or trigger UI refreshes.
+
+---
+
+**In Short:**
+
+*   Use a **Service** for the heavy lifting: talking to databases/APIs, core business rules, managing the *actual* data state. Keep it UI-ignorant.
+*   Use a **ViewModel** to prepare data *for* the UI, handle UI events, manage UI-specific state, and delegate core tasks to Services. It bridges the View and the Service layers. 

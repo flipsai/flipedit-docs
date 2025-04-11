@@ -22,7 +22,8 @@
               "architecture/decorator-pattern",
               "architecture/effect-pipeline",
               "architecture/extension-system",
-              "architecture/factories-interfaces-decorators"
+              "architecture/factories-interfaces-decorators",
+              "architecture/service-vs-viewmodel"
             ]
           },
           {
