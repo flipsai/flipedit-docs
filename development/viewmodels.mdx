@@ -384,6 +384,106 @@ class EffectPropertiesForm extends StatelessWidget with WatchItMixin {
 }
 ```
 
+## Timeline Boundaries and `timelineEnd`
+
+The `timelineEnd` property in `TimelineViewModel` defines the strict end boundary for timeline duration, playback, scrolling, and navigation. Its value is **dynamically calculated** as the maximum end time (`endTimeOnTrackMs`) of all clips on all tracks, guaranteeing that there is no empty or scrollable space beyond the last clip.
+
+### API Documentation
+
+```dart
+/// The timeline's end time in milliseconds.
+/// 
+/// This value is dynamically calculated as the maximum `endTimeOnTrackMs`
+/// across all clips in all tracks. It is exposed for the Flutter inspector
+/// and is strictly enforced by UI rendering, playback, and timeline navigation.
+/// 
+/// Example usage:
+/// ```dart
+/// final end = timelineViewModel.timelineEnd; // e.g. 48321 (ms)
+/// ```
+/// 
+/// This value updates automatically whenever clips are added, moved, resized, or removed.
+int get timelineEnd => timelineEndNotifier.value;
+```
+
+- **ValueNotifier:** Also accessible via `timelineEndNotifier` for reactive updates.
+- **Inspector Integration:** This property is exposed to the Flutter inspector for debugging and UI development.
+
+### Calculation Logic
+
+The `timelineEnd` is dynamically recalculated with every change to the clips collection.
+
+```dart
+int _calculateTotalFrames() {
+  if (clipsNotifier.value.isEmpty) return 0;
+  int maxEndTimeMs = 0;
+  for (final clip in clipsNotifier.value) {
+    if (clip.endTimeOnTrackMs > maxEndTimeMs) {
+      maxEndTimeMs = clip.endTimeOnTrackMs;
+    }
+  }
+  timelineEndNotifier.value = maxEndTimeMs;
+  return ClipModel.msToFrames(maxEndTimeMs);
+}
+```
+This method is called internally whenever the timeline's clips change.
+
+### Boundary Enforcement
+
+- **Playback:** The playhead will never advance past `timelineEnd`. Playback automatically stops at the last frame.
+- **UI Rendering:** The timeline canvas, tracks, time ruler, and scroll region are clamped to precisely match the content duration defined by `timelineEnd`.
+- **Navigation and Scrubbing:** All frame and time navigation is clamped to the range `[0, timelineEnd]`.
+- **Scrolling:** The UI does not permit scrolling beyond the last clip; there is no infinite space or phantom gap at the right edge.
+
+**Key enforcement code:**
+```dart
+// Playback loop
+if (nextFrame > maxAllowedFrame) {
+  stopPlayback();
+} else {
+  currentFrame = nextFrame;
+}
+
+// Frame setter
+final int maxAllowedFrame = totalFrames > 0 ? totalFrames - 1 : ClipModel.msToFrames(DEFAULT_EMPTY_DURATION);
+final clampedValue = value.clamp(0, maxAllowedFrame);
+
+// UI and scrolling logic should rely on timelineEnd when computing scroll/pan limits.
+```
+
+### Inspector Usage
+
+- You can observe `timelineEnd` in the Flutter inspector as it updates.
+- Hot-reload UI widgets can react instantly to changes in timeline boundaries.
+
+### Usage Example
+
+> **Note**
+> Playback and navigation controls (Go to Start, Play/Pause, Go to End), **Enable Snapping**, and **Toggle Aspect Ratio Lock** are all implemented exclusively within the `TimelineControls` widget. These controls are no longer present in the `PreviewPanel` UI.
+>
+> - Playback/navigation actions interact with the `TimelineViewModel` to move and update the playhead but do not directly manipulate the video player.
+> - Enable Snapping and Aspect Ratio Lock trigger callback logic that is passed down to the PreviewPanel, immediately affecting the snapping and resizing constraints of video overlays in the preview area.
+
+```dart
+// Disable timeline playback/navigation controls in TimelineControls if playhead is at timelineEnd
+bool atEnd = viewModel.currentFrame >= ClipModel.msToFrames(viewModel.timelineEnd);
+
+// Scrollbar extent clamped to timelineEnd for precise zoom/scroll regions
+double scrollMax = viewModel.timelineEnd * viewModel.zoom * framePixelWidth;
+```
+
+### Testing & QA Checklist
+
+- [ ] Add a clip at the end and verify `timelineEnd` increases accordingly.
+- [ ] Move or resize the last clip and confirm `timelineEnd` updates and UI clamps.
+- [ ] Remove the last clip and ensure `timelineEnd` reduces and scrolling doesn't go further.
+- [ ] Try scrubbing, playing, or scrolling past the last frame: UI and playback should stop/clamp at `timelineEnd`.
+- [ ] Visually inspect in the Flutter inspector that `timelineEnd` reflects actual content duration.
+- [ ] Confirm no extra space, empty track area, or infinite scrolling exists beyond the timeline's content.
+
+---
+
+For deeper integration or debugging, reference `timeline_viewmodel.dart` and the handling of `timelineEndNotifier`.
 ## Specialized ViewModel Patterns
 
 ### Feature Coordination ViewModel

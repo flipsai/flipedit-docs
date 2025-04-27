@@ -1,0 +1,122 @@
+# Video Resizing in the Preview Panel
+
+## Overview
+
+The video resizing feature enables users to interactively adjust the size and position of video clips directly within the preview panel. This enhancement leverages `flutter_box_transform` and a per-clip `TransformableBoxController` to deliver flexible, intuitive UI resizing. The feature appears in the main editor's preview area, providing WYSIWYG scaling and repositioning of visible video content.
+
+---
+
+## User Interaction
+
+- **How it works:**
+  - Click any visible video in the preview panel to reveal draggable handles.
+  - Drag corners or edges to resize; drag inside the box to move the video overlay.
+  - Resizing is constrained to the video's original aspect ratio and base size.
+  - Adjustments are immediately visible in the preview panel.
+
+- **Behavior:**
+  - Each video clip maintains its own transformation controller and interactable frame.
+  - Only one TransformableBoxController per visible clip is active at a time.
+
+---
+
+## Code Integration
+
+- **Core Logic Location:**  
+  `lib/views/widgets/preview/preview_panel.dart`
+  - All main logic for video resizing (controllers, widget wiring, and state management) is located here.
+> **Note**
+> The PreviewPanel contains only video preview and resize logic. All timeline playback controls—including **Enable Snapping** and **Toggle Aspect Ratio Lock**—are found exclusively in the `TimelineControls` widget. These controls interact with the timeline or preview features via callbacks, but are no longer present in or directly tied to the PreviewPanel UI.
+
+### Snapping and Aspect Ratio Lock Controls
+
+- The **Enable Snapping** and **Toggle Aspect Ratio Lock** buttons are now located in the `TimelineControls` widget, below the main timeline.
+- **Enable Snapping**: Toggles whether drag, resize, and move actions on video overlays snap to significant points (such as edges, centers, or other clip markers) for precision alignment in the timeline view.
+- **Toggle Aspect Ratio Lock**: Allows users to switch between resizing video overlays with or without maintaining the original aspect ratio. When enabled, resizing in the PreviewPanel is strictly constrained to the source video’s aspect ratio; when disabled, users can freely adjust width and height independently.
+
+**How these controls work:**
+- Both buttons control state via logic managed in the `PreviewPanel` and are passed down as callbacks to `TimelineControls`.
+- When toggled, they immediately affect the active video overlay’s interactive resizing behavior—updates are visible in real-time within the PreviewPanel.
+- UI feedback (pressed state) and tooltips indicate their current state.
+
+> **Example flow:**
+> Toggling "Aspect Ratio Lock" in TimelineControls sends a callback to the PreviewPanel, which updates all currently active video overlay boxes to either constrain or release aspect ratio during user drag operations.
+
+---
+- **Key APIs and Concepts:**
+  ```dart
+  /// Controller map for active resizable video clips
+  final Map<int, TransformableBoxController> _boxControllers;
+
+  /// Initializes and attaches a controller for each visible video
+  void _initializeBoxController(int clipId);
+
+  /// Disposes all controllers on cleanup
+  void _disposeAllControllers();
+
+  /// Listener for user-driven changes (resize/move)
+  void _onBoxControllerChanged(int clipId);
+  ```
+
+- **Controller Lifecycle:**
+  - Controllers are created after the video player is initialized and its intrinsic size determined.
+  - Disposed upon clip removal or panel teardown.
+  - Each controller manages bounding box state (`rect`) for its video overlay and enforces tight constraints based on the source video size.
+
+---
+
+## Notes for Maintainers
+
+- **Inspector & Debugging:**  
+  All live geometry (position, size) is accessible via `_boxControllers[clipId]`, making state easily introspectable (for debugging, inspector, or extension purposes).
+
+- **State Persistence:**  
+  - Transforms currently exist in memory; to persist user-adjusted positions/sizes, connect updates from `_onBoxControllerChanged` to a ViewModel or persistent layer.
+  - On project reload, restore box controller state as needed.
+
+- **UX & Customization:**
+  - By default, boxes are centered on initialization.  
+    _See TODO in code for customizing initial position based on layout or user intent._
+  - All resizing is aspect-ratio-locked to the original video size. For custom constraints, adjust `BoxConstraints` on the controller.
+  - UI updates are driven by controller listeners; optimize `setState` usage as needed for performance.
+
+---
+
+## Limitations & Caveats
+
+- **Persistence:**  
+  Resizing and positioning changes are not persisted between sessions unless explicitly wired to the project model.
+
+- **Initial Placement:**  
+  All bounding boxes are centered by default; smart positioning is not yet implemented.
+
+- **Constraints:**  
+  Resizing is currently locked to original aspect ratio and base resolution, which may limit creative layout flexibility.
+
+---
+
+## Example Usage
+
+```dart
+// Access controller for a clip
+final controller = _boxControllers[clipId];
+
+// Get current rect (position and size)
+Rect rect = controller.rect;
+
+// Listen to user interactions
+controller.addListener(() {
+  // Reflect or persist changes when user resizes/moves the overlay
+});
+```
+
+---
+
+## Troubleshooting
+
+- If video cannot be resized:
+  - Ensure `flutter_box_transform` is correctly imported and the controller is created after video load.
+  - Verify `clipId` is present and mapped in `_boxControllers`.
+  - Check constraints match video dimensions for correct handle behavior.
+
+---

@@ -5,41 +5,32 @@ description: 'Understanding the Model-View-ViewModel pattern in FlipEdit'
 
 # MVVM Architecture
 
-FlipEdit implements the Model-View-ViewModel (MVVM) architectural pattern to ensure a clean separation of concerns and to facilitate testing and maintenance.
+FlipEdit implements the Model-View-ViewModel architectural pattern with a clean separation of concerns to enhance maintainability, testability, and scalability.
 
-## What is MVVM?
+## Key Components and Responsibilities
 
-MVVM is an architectural pattern that separates an application into three main components:
+- **Model**: Defines application data and business rules.
+- **View**: The user interface displaying information and capturing user input.
+- **ViewModel**: Acts as the intermediary between the View and Model, encapsulating UI-related state and implementing business logic.
 
-- **Model**: Represents the data and business logic
-- **View**: Represents the UI elements
-- **ViewModel**: Acts as an intermediary between the Model and View
+## ViewModel and Command Interaction
 
-```mermaid
-flowchart LR
-    View <--> ViewModel
-    ViewModel <--> Model
-    
-    classDef model fill:#77216f,color:white
-    classDef viewmodel fill:#e95420,color:white
-    classDef view fill:#0e8420,color:white
-    
-    class Model model
-    class ViewModel viewmodel
-    class View view
-```
+### Separation of Concerns in FlipEdit
 
-## Why MVVM for FlipEdit?
+- The **ViewModel** handles all state calculation and mutation logic. It decides *what* changes need to happen to the timeline state (e.g., placing clips, trimming, handling overlaps).
+- The **Command** pattern is used to perform persistence mutations. Commands take the state changes from the ViewModel and execute them against the data persistence layer (e.g., database), ensuring transactional integrity and enabling features like undo/redo.
 
-We chose MVVM for FlipEdit because:
+### Benefits
 
-1. **Separation of concerns** - UI logic is separated from business logic
-2. **Testability** - ViewModels can be tested independently of UI
-3. **Maintainability** - Changes to UI don't affect business logic
-4. **Reactive updates** - UI automatically reflects changes in data
-5. **Compatibility** - Works well with Flutter's widget system
+- This split improves testability:
+  The ViewModel can be tested independently of the database, focusing on business logic and state transitions.
+- Commands abstract the persistence layer, managing database transactions and encapsulating user actions.
+- Commands facilitate implementing undo/redo mechanics by encapsulating discrete changes.
 
-## MVVM Implementation in FlipEdit
+## Summary
+
+In FlipEdit, the MVVM architecture is extended with a Command pattern to cleanly separate state mutation (ViewModel) from persistence mutation (Commands). This design leads to a robust and maintainable codebase, where business logic remains testable and persistent state changes are consistently managed.
+
 
 ### Model Layer
 

@@ -1,0 +1,105 @@
+---
+title: Video Player Loading and Diagnostics Fix
+sidebar_label: Video Player Fix
+---
+
+This document outlines a recent fix implemented for issues related to video loading and playback, particularly addressing the "No video loaded or at current frame" message and improving diagnostic capabilities.
+
+### Original Issue
+
+Users sometimes encountered an error message stating "No video loaded or at current frame" when attempting to preview video clips in the application. This issue could arise from various factors, including:
+
+*   Failure to initialize the video player controller.
+*   Timeouts during the video loading process.
+*   Problems handling specific video formats, such as MKV files, which might load without audio or video.
+
+The lack of detailed feedback on the cause of the failure made debugging these issues challenging for developers.
+
+### Fix Approach
+
+The implemented fix focuses on improving the robustness of video player controller management and providing enhanced diagnostic information. The core changes are located in `lib/services/video_player_manager.dart` and `lib/views/widgets/preview/preview_panel.dart`.
+> **Note**  
+> The PreviewPanel focuses solely on video display and playback state. All timeline playback controls (such as play, pause, go to start/end) are implemented in the `TimelineControls` widget and are not part of the PreviewPanel UI.
+> **Note**  
+> The **Enable Snapping** and **Toggle Aspect Ratio Lock** buttons are also now found in the `TimelineControls` widget. These controls no longer exist in the PreviewPanel; instead, toggling them sends callback events to the PreviewPanel to update snapping and aspect ratio constraints when resizing and moving video overlays within the preview area.
+
+1.  **Centralized Controller Management (`VideoPlayerManager`):** The `VideoPlayerManager` service now handles the creation and management of `VideoPlayerController` instances using the `getOrCreatePlayerController` method. This method reuses existing controllers for a given video URL if available or creates and initializes a new one.
+2.  **Initialization with Timeout:** The `controller.initialize()` call within `getOrCreatePlayerController` now includes a timeout of 30 seconds (`initTimeout`). This prevents the application from hanging indefinitely if a video fails to load. If the initialization times out, a `TimeoutException` is thrown and logged.
+3.  **MKV Audio Track Selection:** A specific fix was added to address issues with MKV files when using the MdkVideoPlayerPlatform. If multiple audio tracks are detected for an MKV video, the code explicitly selects the first audio track (track 0). This resolves cases where MKV videos might load without sound.
+
+### Enhanced Diagnostics
+
+Significant logging has been added to both `VideoPlayerManager` and `PreviewPanel` to provide developers with better insights into the video loading and playback process. These logs can be viewed in the application's debug console.
+
+**In `lib/services/video_player_manager.dart`:**
+
+*   **`logDebug("Creating controller for $videoUrl")`:** Logs when a new controller is being created for a given URL.
+*   **`logWarning("Initialization timeout for $videoUrl after $initTimeout")`:** Logs when the controller initialization times out.
+*   **`logDebug("Controller initialized for $videoUrl")`:** Logs upon successful controller initialization.
+*   **`logInfo("Multiple audio tracks detected for $videoUrl (...). Selecting track 0.")`:** Logs when multiple audio tracks are found for an MKV file and track 0 is selected.
+*   **`logDebug("Single audio track detected for $videoUrl. No action needed.")`:** Logs when a single audio track is found for an MKV file.
+*   **`logDebug("No audio tracks detected or MediaInfo not available for $videoUrl.")`:** Logs when no audio information is available for an MKV file.
+*   **`logWarning("Invalid textureId (...) for $videoUrl, cannot set audio track.")`:** Logs if an invalid texture ID is encountered during audio track selection.
+*   **`logDebug("Not using FVP/MDK platform, skipping audio track selection for $videoUrl.")`:** Logs if the MDK platform is not in use.
+*   **`logError("Error selecting audio track for $videoUrl: ...")`:** Logs any errors encountered during audio track selection.
+*   **`logError("Error initializing VideoPlayerController for $videoUrl: ...")`:** Logs errors during controller initialization.
+*   **`logDebug("Attempting to load file from path: ...")`:** Logs the file path when loading from a local file.
+*   **`logError("File does not exist at path: ...")`:** Logs if a local file does not exist.
+*   **`logDebug("Attempting to load network URL: ...")`:** Logs the URL when loading from a network source.
+*   **`logError("Error setting state for controller with URL ...")`:** Logs errors when attempting to set the playback state of a controller.
+
+**In `lib/views/widgets/preview/preview_panel.dart`:**
+
+*   **`logDebug("Rebuilding...")`:** Indicates a rebuild of the PreviewPanel.
+*   **`logDebug("Received URL: $currentVideoUrl")`:** Shows the video URL being processed by the panel.
+*   **`logDebug("No video URL, showing fallback text.")`:** Logs when no video URL is available, triggering the "No video loaded..." message.
+*   **`logDebug("PreviewPanel watchFuture [...]: State=...")`:** Provides the connection state of the `playerFuture`.
+*   **`logError("PreviewPanel watchFuture [...]: ERROR=...")`:** Logs errors received from the `playerFuture`.
+*   **`logDebug("PreviewPanel watchFuture [...]: Data received. Controller initialized: ...")`:** Indicates that controller data has been received and shows its initialization status.
+*   **`logDebug("Controller is initialized. Passing to VideoPlayerWidget.")`:** Logs when an initialized controller is passed to the display widget.
+*   **`logDebug("Controller received but not yet initialized. Showing spinner.")`:** Logs when a controller is received but not yet initialized, and a loading spinner is displayed.
+*   **`logWarning("PreviewPanel watchFuture [...]: Snapshot has no data and no error. State: ... Showing fallback help icon.")`:** Logs when the `playerFuture` is in an unexpected state, triggering a fallback help icon.
+
+Developers encountering video loading or playback issues should examine these log messages in the debug console. The detailed information about the controller state, initialization status, errors, and specific actions taken (like MKV audio track selection) will help pinpoint the root cause of the problem.
+
+### Video Rendering Refactoring with FFI and Direct Texture Management
+
+This section details a significant refactoring of the video rendering pipeline, focusing on improving performance and eliminating unnecessary widget rebuilds by leveraging Flutter's FFI (Foreign Function Interface) to manage native textures directly.
+
+**Goal:**
+
+The primary goal of this refactoring was to move away from relying solely on `ValueNotifier` and `ValueListenableBuilder` for updating the video player UI, which caused excessive widget tree rebuilds. Instead, the approach is to manage the native video texture directly and render it using Flutter's `Texture` widget, with texture updates triggered by native frame callbacks (a future step).
+
+**Key Changes:**
+
+1.  **Elimination of `ValueNotifier`/`ValueListenableBuilder`:** The dependency on `ValueNotifier` in the `VideoPlayerController` and `ValueListenableBuilder` in the `VideoPlayerWidget` has been removed. The `VideoPlayerWidget` no longer rebuilds its main content every time a player property changes.
+2.  **`VideoPlayerWidget` as `StatefulWidget`:** The `VideoPlayerWidget` is now a `StatefulWidget`. It uses a `FutureBuilder` to asynchronously obtain the `VideoPlayerController` instance (and its associated native `textureId`) from the `VideoPlayerManager`. The widget rebuilds only when this Future resolves, providing the initial controller and texture ID.
+3.  **Direct Texture Rendering:** The `VideoPlayerWidget` now directly utilizes the `Texture` widget provided by Flutter, passing the `textureId` obtained from the controller. This allows Flutter to render the native texture managed by the underlying video player library (MDK via FFI).
+4.  **Role of `Player` and `MdkVideoPlayerPlatform`:**
+    *   The `Player` class (`fvp/lib/src/player.dart`) is responsible for the low-level interaction with the native MDK library via FFI. It manages the lifecycle of the native texture, including creating (`updateTexture`) and potentially releasing it. It exposes the `textureId` property.
+    *   The `MdkVideoPlayerPlatform` class (`fvp/lib/src/video_player_mdk.dart`) implements the `video_player` plugin platform interface. Its `create` method instantiates the `Player`, prepares the media, and calls `player.updateTexture` to obtain the native texture ID. Its `buildView` method provides the Flutter `Texture` widget using this ID.
+
+**How it Works Now:**
+
+When the `VideoPlayerWidget` is built, the `FutureBuilder` calls `VideoPlayerManager().getOrCreatePlayerController`. This method, if a controller for the given URL doesn't exist, creates an `MdkVideoPlayer` (which wraps the native player), prepares the media, and crucially, calls `player.updateTexture()`. This FFI call in the `Player` class interacts with the native layer to create a renderable texture and returns its ID.
+
+The `FutureBuilder` resolves with the initialized controller and its `textureId`. The `VideoPlayerWidget`'s build method then renders the `Texture` widget using this `textureId`. Subsequent updates to the video content (new frames) will, in the future, directly update the native texture via FFI callbacks without requiring the `VideoPlayerWidget` itself to rebuild.
+
+**Current Scope and Future Steps:**
+
+The current implementation successfully establishes the pipeline for direct texture rendering using FFI and removes the dependency on `ValueNotifier`/`ValueListenableBuilder` for frame updates. However, the actual mechanism for efficiently notifying Flutter when a new frame is ready and triggering a texture update via FFI callbacks is a future implementation step. The placeholder FFI calls for texture creation/release and native frame callbacks are present in the `Player` class (`fvp/lib/src/player.dart`) but are not yet fully implemented.
+
+This refactoring lays the groundwork for a more performant and flexible video playback system that aligns better with native rendering approaches.
+
+### Testing Recommendation
+
+Following the code review, it is highly recommended to perform thorough testing of the video player with various video formats (including MP4, MOV, and specifically MKV) and different playback scenarios. This includes testing:
+
+*   Loading local files.
+*   Loading network URLs (if applicable).
+*   Seeking to different positions.
+*   Playing and pausing.
+*   Handling videos with multiple audio tracks (MKV).
+*   Testing with corrupted or invalid video files to ensure graceful error handling.
+
+Comprehensive testing will help ensure the stability and reliability of the video playback functionality across different contexts.

@@ -1,0 +1,76 @@
+# Timeline Refactoring Overview
+
+## Table of Contents
+- [Purpose and Scope](#purpose-and-scope)
+- [Notable Changes](#notable-changes)
+- [Key Improvements](#key-improvements)
+- [User-Visible Changes](#user-visible-changes)
+- [Notes for Future Maintainers](#notes-for-future-maintainers)
+
+---
+
+## Purpose and Scope
+
+The timeline refactor was performed to standardize timeline functionality, enhance maintainability, and clarify responsibilities across the View, ViewModel, and Services layers. The goal was to achieve robust MVVM compliance, eliminate duplicative/fragile logic, and enable future extensibility for advanced editing behaviors in Flipedit.
+
+---
+
+## Notable Changes
+
+**Files & Components Involved:**
+- `lib/views/widgets/timeline/timeline.dart`
+- `lib/viewmodels/timeline_viewmodel.dart`
+- `lib/services/timeline_logic_service.dart`
+- `lib/services/timeline_navigation_service.dart`
+- `lib/viewmodels/commands/*_clip_command.dart` (e.g., move, remove, resize, roll_edit)
+- Components and helpers in `lib/views/widgets/timeline/components/`
+
+**Major Architectural Adjustments:**
+- **Widget responsibilities trimmed:** `Timeline` widget defers most state management to `TimelineViewModel` (e.g., zoom, snapping, aspect ratio lock, track label width).
+- **Enhanced ViewModel:** `TimelineViewModel` centralizes timeline state, exposes only reactive notifiers for the View, and delegates domain logic to dedicated services.
+- **Service Isolation:**  
+  - `TimelineLogicService` now provides all core calculations (frame-to-pixel, scroll math, clip placement).
+  - `TimelineNavigationService` manages navigation state: zoom, playhead, scroll requests, and timeline extent.
+- **Command pattern formalized:** Operation commands (move, remove, resize, roll edit) operate on state via ViewModel/services, not via widget state.
+
+---
+
+## Key Improvements
+
+- **MVVM adherence:** Clear separation of View (rendering/UI), ViewModel (state coordination), Service (business logic), and Command (user intent execution).
+- **Testability:** Core logic is now in pure services and command classes, enabling unit tests without UI dependencies.
+- **Performance:** Removed redundant/expensive state derivation from Widgets; updates now propagate via ValueNotifiers, minimizing unnecessary rebuilds.
+- **Robustness:** Centralized bounds checking, clamping, and error handling in services—guards against invalid states and unexpected runtime issues.
+- **User Experience:** Smoother and more predictable scrolling, track/clip placement, and timeline interactions due to consistent calculation flows.
+
+---
+
+## User-Visible Changes
+
+- **Consistent timeline interactions:** Scroll to frame, zoom, and clip movements behave predictably.
+- **Improved performance:** Reduced choppiness and lag, especially with complex timelines or rapid editing.
+- **More reliable undo/redo and editing operations.**
+- **No known loss of existing functionality; documented minor improvements in track and label behaviors.**
+
+---
+
+## Notes for Future Maintainers
+
+- **Reference Design Documents:**
+  - [MVVM Architecture](../architecture/mvvm.mdx)
+  - [Service vs ViewModel Responsibility](../architecture/service-vs-viewmodel.mdx)
+
+- **Best Practices Derived from Refactor:**
+  - Place all timeline math in `TimelineLogicService` for discoverability and testability.
+  - Add new interaction/behavior by extending Command classes & updating ViewModel—not by bypassing notifiers/state.
+  - Prefer ValueNotifier for UI-observable state; all interactions should propagate through ViewModel or Services.
+  - Use logging utilities for observability, and maintain error messages for better debugging.
+
+- **Undo/Redo:**  
+  Commands are responsible for isolating and restoring both direct object state and related neighbor/side-effect state. See command comments and reviewer suggestions for transactional update strategies.
+
+- **Follow-up Suggestions from Code Review:**  
+  - Consider further isolating direct database writes to service layers.
+  - Continue to enhance documentation and add integration tests for all complex state updates.
+
+---

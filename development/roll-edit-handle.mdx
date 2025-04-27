@@ -1,0 +1,135 @@
+---
+title: Roll Edit Handle Integration
+description: Documentation for the Timeline Track roll edit handle feature, user interaction, architecture, and Inspector integration in Flipedit.
+---
+
+# Roll Edit Handle Integration
+
+## Table of Contents
+
+1. [Overview: What is a Roll Edit Handle?](#overview-what-is-a-roll-edit-handle)
+2. [User Interaction and Behavior](#user-interaction-and-behavior)
+3. [Widget Structure & MVVM Responsibilities](#widget-structure--mvvm-responsibilities)
+4. [Inspector Integration](#inspector-integration)
+5. [Known Issues & Future Work](#known-issues--future-work)
+
+---
+
+## Overview: What is a Roll Edit Handle?
+
+A **roll edit handle** is an interactive UI element on the timeline track that enables users to perform "roll edits"—modifying the boundary between two adjacent clips without affecting the total timeline duration. This handle appears between two clips that can be roll-edited, visually indicating the edit point.
+
+- **Location:** Appears at the junction between two adjacent timeline clips (e.g., in the timeline track UI).
+- **Purpose:** Lets users offset the cut point between two clips by dragging without introducing gaps or overlaps in the timeline.
+
+![Roll Edit Handle in Timeline UI](../images/roll_edit_handle_ui.png) <!-- Replace/verify path if image is or becomes available -->
+
+---
+
+## User Interaction and Behavior
+
+- **Hover Feedback:**  
+  - When a user hovers over a roll edit handle, it changes appearance (e.g., highlighted, color accent, or cursor change) to indicate interactivity.
+- **Drag Operation:**  
+  - Click-and-drag horizontally to move the cut point between two clips:
+    - One adjacent clip's end and the other's start adjust in sync.
+    - No gap or overlap is introduced.
+- **Affected Elements:**  
+  - Only the two directly adjacent clips are modified.
+  - Playback position and other timeline elements remain unaffected.
+
+**Example Flow:**
+1. Hover over the roll edit handle between two clips.
+2. Drag left or right; see both clip boundaries adjust in real-time.
+3. Release to apply the roll edit.
+
+---
+
+## Widget Structure & MVVM Responsibilities
+
+The roll edit functionality is implemented using the MVVM architecture, providing modularity and testability.
+
+- **Main Widget:**  
+  - [`RollEditHandle`](../../../lib/views/widgets/timeline/components/roll_edit_handle.dart)  
+    Responsible for rendering the handle UI, hover/drag interactions, and feedback.
+- **Parent Widget:**  
+  - [`TimelineTrack`](../../../lib/views/widgets/timeline/timeline_track.dart)  
+    Manages track content and arranges roll edit handles between clips.
+- **ViewModel:**  
+  - [`TimelineViewModel`](../../../lib/viewmodels/timeline_viewmodel.dart)  
+    Maintains state (e.g., which handles are enabled, drag state), exposes commands for roll edits.
+- **Service(s):**  
+  - [`TimelineClipResizeService`](../../../lib/services/timeline_clip_resize_service.dart)  
+    Controls roll logic, constraints, and validation of allowed operations.
+- **Command:**  
+  - [`RollEditCommand`](../../../lib/viewmodels/commands/roll_edit_command.dart)  
+    Encapsulates logic for applying a roll edit to two clips, with undo/redo support.
+
+**MVVM Data Flow:**
+```mermaid
+graph LR
+    User -- drag/hover --> RollEditHandle
+    RollEditHandle -- events --> TimelineViewModel
+    TimelineViewModel -- invokes --> RollEditCommand
+    RollEditCommand -- delegates to --> TimelineClipResizeService
+    Service -- validation/processing --> TimelineViewModel
+    TimelineViewModel -- notifies --> TimelineTrack/Clip widgets
+```
+
+- **Bindings:** The `RollEditHandle` widget uses bindings (e.g., `ValueListenable`, state management) to update UI based on ViewModel changes.
+
+---
+
+## Inspector Integration
+
+The roll edit handle appears as a discrete node in the timeline widget tree when present.
+
+- **Widget Tree:**  
+  - Appears as a child under the corresponding `TimelineTrack` widget, typically between two `TimelineClip` widgets.
+- **Inspectable States:**  
+  - **Idle:** Not active, only visible when roll edit is possible.
+  - **Hover/Highlight:** Visual state when hovered, showing feedback.
+  - **Dragging:** State during user drag; can inspect position and affected clips in the tree.
+- **Inspector Tracking:**  
+  - Developers can trace roll edit handle creation, interactivity, and state changes directly in Flutter Inspector.
+  - Useful for debugging user interaction, binding propagation, and state management.
+
+---
+
+## Known Issues & Future Work
+
+- **TODO:**  
+  - Improve type compatibility for `RollEditCommand`. The current implementation may benefit from further type safety and abstraction.
+- **Planned:**  
+  - Investigate and design UI solutions for cases where two roll handles are near-adjacent (e.g., when multiple edits are very close or "stacked").
+  - Possible future enhancements to feedback, accessibility, or Inspector aids.
+
+---
+
+## Example Usage (Code Snippet)
+
+```dart
+// Example: Creating a RollEditHandle between two TimelineClips
+
+TimelineTrack(
+  children: [
+    TimelineClip(...),
+    RollEditHandle(
+      // properties: clipA, clipB, onRollEdit callback...
+    ),
+    TimelineClip(...),
+  ],
+)
+```
+
+---
+
+## Architectural Notes
+
+- Roll edit maintains strict MVVM separation.
+- All user actions (hover, drag) flow through the view and are dispatched as commands to the ViewModel.
+- The ViewModel coordinates with services to enforce logic, ensuring widget code stays UI-focused.
+
+---
+
+**For further architectural details, refer to [`timeline-refactor-overview.mdx`](./timeline-refactor-overview.mdx) and the documented widget/model/command source files.**
